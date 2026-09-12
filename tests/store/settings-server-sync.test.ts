@@ -787,6 +787,39 @@ describe('fetchServerProviders — TTS stale selection', () => {
 
     expect(store.getState().ttsProviderId).toBe('openai-tts');
   });
+
+  it('enables narration and adopts the provider when the server configures TTS after first run', async () => {
+    const store = await getStore();
+
+    // First run: no TTS provider on the server. autoConfigApplied flips to
+    // true here, which used to permanently lock narration off.
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+    expect(store.getState().autoConfigApplied).toBe(true);
+    expect(store.getState().ttsEnabled).toBe(false);
+
+    // Operator adds TTS_OPENAI_API_KEY and restarts the server.
+    mockServerResponse({ tts: { 'openai-tts': {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().ttsEnabled).toBe(true);
+    expect(store.getState().ttsProviderId).toBe('openai-tts');
+  });
+
+  it('does not re-enable narration the user turned off while TTS stayed configured', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ tts: { 'openai-tts': {} } });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().ttsEnabled).toBe(true);
+
+    store.getState().setTTSEnabled(false);
+
+    mockServerResponse({ tts: { 'openai-tts': {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
 });
 
 describe('fetchServerProviders — ASR stale selection', () => {

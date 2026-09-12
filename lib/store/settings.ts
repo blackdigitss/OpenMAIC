@@ -40,7 +40,11 @@ import {
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
-import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import {
+  BROWSER_NATIVE_TTS_PROVIDER_ID,
+  isTTSProviderEnabled,
+  type TTSEnablementConfig,
+} from '@/lib/audio/provider-enablement';
 
 const log = createLogger('Settings');
 
@@ -489,6 +493,22 @@ function isUsableMediaProvider(
 
 function shouldTurnOn(currentlyEnabled: boolean, usable: boolean): boolean {
   return !currentlyEnabled && usable;
+}
+
+/**
+ * Whether any managed (non browser-native) TTS provider in this config map is
+ * usable. Browser-native is excluded deliberately: it is intrinsically
+ * "configured", so counting it would pin the predicate to true and hide the
+ * unconfigured -> configured transition callers key off.
+ */
+function hasUsableManagedTTSProvider(
+  config: Partial<Record<string, TTSEnablementConfig>>,
+): boolean {
+  return Object.keys(config).some(
+    (id) =>
+      id !== BROWSER_NATIVE_TTS_PROVIDER_ID &&
+      isTTSProviderEnabled(id as TTSProviderId, config[id]),
+  );
 }
 
 // Initialize default audio config
@@ -1885,6 +1905,38 @@ export const useSettingsStore = create<SettingsState>()(
                 }
                 if (serverVideoIds.length > 0 && !state.videoGenerationEnabled) {
                   autoVideoEnabled = true;
+                }
+              }
+
+              // === Server TTS configured AFTER first run ===
+              // First-run auto-config is guarded by `autoConfigApplied`, so an
+              // operator who adds TTS_*_API_KEY to an install that has already
+              // synced once left `ttsEnabled` false forever: every generated
+              // lesson is silent (use-scene-generator skips TTS) and playback
+              // falls through to the no-audio reading timer, which reads as
+              // "no sound and the slides race past". Mirrors the client-key
+              // path in setTTSProviderConfig (#1288): only the
+              // unconfigured -> configured transition flips it, so a user who
+              // deliberately turned narration off stays off.
+              if (state.autoConfigApplied) {
+                const hadManagedTTS = hasUsableManagedTTSProvider(state.ttsProvidersConfig);
+                const hasManagedTTS = hasUsableManagedTTSProvider(newTTSConfig);
+                if (shouldTurnOn(state.ttsEnabled, !hadManagedTTS && hasManagedTTS)) {
+                  autoTtsEnabled = true;
+                  // Selection is still the browser-native default, so adopt the
+                  // provider the operator just configured — otherwise narration
+                  // comes back in the browser voice while their provider (and
+                  // its voices) sit unused.
+                  if (state.ttsProviderId === BROWSER_NATIVE_TTS_PROVIDER_ID) {
+                    const adopted = Object.entries(data.tts).find(
+                      ([, info]) => !info.disabled,
+                    )?.[0] as TTSProviderId | undefined;
+                    if (adopted) {
+                      autoTtsProvider = adopted;
+                      autoTtsVoice =
+                        DEFAULT_TTS_VOICES[adopted as BuiltInTTSProviderId] || 'default';
+                    }
+                  }
                 }
               }
 
