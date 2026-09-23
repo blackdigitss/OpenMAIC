@@ -319,6 +319,13 @@ async function studyLecture(
     await generateCards(db, llm, id);
   }
 
+  // Fill thin concepts from the textbook (bounded per lecture; skipped if no textbook).
+  const { thinConcepts, fillGap } = await import('./gaps');
+  for (const c of await thinConcepts(db, lectureId)) {
+    await progress(db, jobId, 'cards', at(0.92), `Filling gaps from the textbook: ${c.name}`);
+    await fillGap(db, llm, c).catch(() => undefined);
+  }
+
   // Tonight's lesson is built from class sessions (decks feed them).
   if (deps.appUrl && isSession) {
     await progress(db, jobId, 'lesson', at(0.93), 'Building tonight’s lesson');

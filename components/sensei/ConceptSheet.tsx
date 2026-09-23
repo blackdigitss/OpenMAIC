@@ -124,13 +124,33 @@ function ConceptContent({ c }: { c: ConceptDetail }) {
         </Section>
       )}
 
+      {c.gap?.adds && (
+        <Section title="What your textbook adds" footer="Written only from the cited textbook pages, to fill in what class covered briefly. It never replaces what your professor taught.">
+          <div className="s-card">
+            <div className="s-prose" style={{ fontSize: 16 }}>
+              <TermText text={c.gap.adds} exclude={c.id} />
+            </div>
+            {c.gap.disagreement && (
+              <div className="t-foot" style={{ color: 'var(--orange)', marginTop: 8 }}>
+                {c.gap.disagreement}
+              </div>
+            )}
+            {c.gap.citations.length > 0 && (
+              <div className="t-foot c2" style={{ marginTop: 8 }}>
+                {c.gap.citations.map((x) => `${x.book}, ${x.cite}`).join('; ')}
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
       {c.textbook.length > 0 && (
         <Section title="In your textbook" footer="The program’s reference text, for more depth. Found by search, not summarized.">
           <div className="s-list">
             {c.textbook.map((p) => (
               <div key={`${p.sourceId}-${p.page}`} className="s-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
                 <span className="t-foot" style={{ color: 'var(--indigo)', fontWeight: 600 }}>
-                  {p.book}, page {p.page}
+                  {p.book}, {p.cite}
                 </span>
                 <span className="t-callout">
                   <TermText text={`…${p.snippet}…`} exclude={c.id} />
@@ -431,7 +451,7 @@ function Ask({ conceptId, name }: { conceptId: string; name: string }) {
               </div>
               {a.textbook.length > 0 && (
                 <div className="t-foot c2" style={{ marginTop: 8 }}>
-                  {a.textbook.map((t) => `${t.book}, p. ${t.page}`).join('; ')}
+                  {a.textbook.map((t) => `${t.book}, ${t.cite}`).join('; ')}
                 </div>
               )}
             </div>

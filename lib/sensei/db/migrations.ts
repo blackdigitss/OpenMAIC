@@ -384,6 +384,23 @@ CREATE TABLE sensei_concept_board (
 ALTER TABLE sensei_card ADD COLUMN case_family TEXT;
 `,
   },
+  {
+    id: '0008_textbook_gaps',
+    sql: `
+-- The book's own page number (running footer), since PDF page ≠ printed page.
+ALTER TABLE sensei_source_unit ADD COLUMN printed_page TEXT;
+
+-- "What the textbook adds" for thin concepts: written only from the cited textbook pages.
+CREATE TABLE sensei_concept_textbook (
+  concept_id UUID PRIMARY KEY REFERENCES sensei_concept(id),
+  adds TEXT,
+  disagreement TEXT,
+  citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  prompt_version TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`,
+  },
 ];
 
 export interface MigrationQueryable {

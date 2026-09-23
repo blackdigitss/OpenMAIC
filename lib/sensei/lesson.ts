@@ -80,11 +80,23 @@ export async function buildLessonBrief(db: Db, lectureId: string): Promise<Lesso
   const refLines: string[] = [];
   let refBudget = 9_000;
   for (const c of digest.newConcepts.slice(0, 6)) {
+    if (refBudget <= 0) break;
+    // Prefer the prepared "what the textbook adds" note; else a raw page.
+    const { rows: gap } = await db.query<{ adds: string | null; citations: { book: string; cite: string }[] }>(
+      'SELECT adds, citations FROM sensei_concept_textbook WHERE concept_id = $1 AND adds IS NOT NULL',
+      [c.id],
+    );
+    if (gap[0]?.adds) {
+      const cite = gap[0].citations.map((x) => `${x.book}, ${x.cite}`).join('; ');
+      refLines.push(`- ${c.name} (${cite}): ${gap[0].adds}`);
+      refBudget -= gap[0].adds.length;
+      continue;
+    }
     const [p] = await textbookPassages(db, [c.name], 1);
-    if (!p || refBudget <= 0) continue;
+    if (!p) continue;
     const text = p.text.slice(0, Math.min(1500, refBudget));
     refBudget -= text.length;
-    refLines.push(`- ${c.name} — ${p.book}, p. ${p.page}: ${text}`);
+    refLines.push(`- ${c.name}, ${p.book}, ${p.cite}: ${text}`);
   }
   const reference = refLines.length ? `\n\nTEXTBOOK REFERENCE — the program's ground truth; use to fill gaps and deepen explanations, cite as "(textbook p. N)":\n${refLines.join('\n')}` : '';
   const notes = `COURSE NOTES — the slides are the foundation; "said in class" items are the professor's spoken additions (explanations, emphasis, stories).\n${lines.join('\n')}${reference}`.slice(0, 70_000);
