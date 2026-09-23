@@ -32,9 +32,18 @@ fail() {
 log "=== update start (live: $live) ==="
 cd "$live" || fail "live slot missing."
 git fetch -q upstream || fail "couldn't reach GitHub."
-git fetch -q origin 2>/dev/null
+git fetch -q origin || fail "couldn't reach your GitHub fork."
 
-if git merge-base --is-ancestor upstream/main sensei && [ "$1" != "--force" ]; then
+# Deploy what was merged on GitHub: fast-forward the local sensei ref to origin/sensei.
+if git merge-base --is-ancestor sensei origin/sensei; then
+  git update-ref refs/heads/sensei origin/sensei
+elif ! git merge-base --is-ancestor origin/sensei sensei; then
+  fail "the sensei branch on this Mac and on GitHub have diverged. Ask Claude to reconcile them."
+fi
+
+# Up to date only if the live build already contains both the latest sensei and upstream.
+live_head=$(git -C "$live" rev-parse HEAD)
+if git merge-base --is-ancestor sensei "$live_head" && git merge-base --is-ancestor upstream/main "$live_head" && [ "$1" != "--force" ]; then
   log "already up to date"
   write_status ok "Already up to date"
   exit 0
