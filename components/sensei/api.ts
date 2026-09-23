@@ -26,6 +26,8 @@ export interface SettingsData {
   pauseAtBudget: boolean;
   pushDevices: number;
   pushKey: string | null;
+  lastBackup: { at: string } | null;
+  restoreCheck: { ok: boolean; at: string; problems: string[] } | null;
 }
 
 export interface BudgetData {

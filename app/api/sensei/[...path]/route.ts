@@ -163,7 +163,14 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return ok({ ...(await monthSpend()), budgetUsd: (await getSettings(db)).budgetUsd });
       case 'settings': {
         const { rows } = await db.query<{ n: string }>('SELECT count(*) AS n FROM sensei_push_subscription');
-        return ok({ ...(await getSettings(db)), pushDevices: Number(rows[0].n), pushKey: vapidFromEnv()?.keys.publicKey ?? null });
+        const { getState } = await import('@/lib/sensei/settings');
+        return ok({
+          ...(await getSettings(db)),
+          pushDevices: Number(rows[0].n),
+          pushKey: vapidFromEnv()?.keys.publicKey ?? null,
+          lastBackup: await getState(db, 'lastBackup'),
+          restoreCheck: await getState(db, 'restoreCheck'),
+        });
       }
       case 'audio':
         return streamAudio(req, id);
