@@ -78,7 +78,9 @@ link_shared "$idle"
 log "installing"
 pnpm install --frozen-lockfile >> "$LOGS/update.log" 2>&1 || pnpm install >> "$LOGS/update.log" 2>&1 || fail "dependency install failed."
 log "testing"
-node_modules/.bin/vitest run tests/sensei >> "$LOGS/update.log" 2>&1 || fail "Sensei's tests failed on the new version."
+# Generous timeouts and few workers: this 2013 iMac may be busy (live app, other jobs).
+node_modules/.bin/vitest run tests/sensei --testTimeout 60000 --hookTimeout 60000 --maxWorkers 2 >> "$LOGS/update.log" 2>&1 \
+  || fail "Sensei's tests failed on the new version."
 log "building"
 pnpm build >> "$LOGS/update.log" 2>&1 || fail "the new version didn't build."
 

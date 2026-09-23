@@ -73,6 +73,7 @@ export async function generateCards(db: Db, llm: StructuredLlm, conceptId: strin
     system: CARDS_SYSTEM,
     prompt: `Concept: ${concept[0].canonical_name}\n\n<records>\n${usable.map((r, i) => `R${i + 1} (${r.type}): ${r.statement}`).join('\n')}\n</records>`,
     tier: 'fast',
+    purpose: 'cards',
   });
   // Keep the student's own choice; otherwise record the model's classification.
   await db.query(

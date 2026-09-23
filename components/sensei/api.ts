@@ -28,6 +28,16 @@ export interface SettingsData {
   pushKey: string | null;
 }
 
+export interface BudgetData {
+  month: string;
+  total: number;
+  byPurpose: { purpose: string; label: string; usd: number }[];
+  projected: number | null;
+  daysWithData: number;
+  unknownModels: string[];
+  budgetUsd: number;
+}
+
 export interface Job {
   id: string;
   status: 'queued' | 'running' | 'failed' | 'needs_course';
@@ -51,6 +61,7 @@ export interface TodayData {
   week: { date: string; concepts: number }[];
   courses: Course[];
   coverage: { deckTitle: string; pages: number; covered: number } | null;
+  budget: { spent: number; budget: number; projected: number | null; paused: boolean };
   module: ModuleInfo | null;
   hasKey: boolean;
   system: { workerAlive: boolean; workerSeen: boolean; update: { state: string; message: string; at: string } | null };

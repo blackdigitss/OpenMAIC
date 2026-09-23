@@ -80,6 +80,7 @@ export async function askSensei(db: Db, llm: StructuredLlm, question: string, co
       `<textbook>\n${book.map((b) => `[${b.ref}] ${b.book}, p. ${b.page}: ${b.text.slice(0, 1800)}`).join('\n\n') || '(none)'}\n</textbook>\n\n` +
       `<question>${question}</question>`,
     tier: 'fast',
+    purpose: 'ask',
   });
   const cited = new Set(out.citations);
   const citedBook = new Set(out.reference_citations);
