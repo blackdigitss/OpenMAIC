@@ -15,7 +15,8 @@ function makePdf(pages: string[]): Buffer {
   objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`);
   objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
   pages.forEach((text, i) => {
-    const stream = `BT /F1 12 Tf 40 700 Td (${text.replace(/[()\\]/g, '')}) Tj ET`;
+    const lines = (text.replace(/[()\\]/g, '').match(/.{1,70}(\s|$)/g) ?? []).map((l) => `(${l.trim()}) Tj T*`).join(' ');
+    const stream = `BT /F1 12 Tf 14 TL 40 700 Td ${lines} ET`;
     objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`);
     objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   });
@@ -74,7 +75,7 @@ describe('sources by role', () => {
   it('indexes a textbook for search with no model calls and no lecture', async () => {
     const { enqueueLecture, claimJob, runJob } = await import('@/lib/sensei/jobs');
     const { textbookPassages } = await import('@/lib/sensei/queries');
-    const path = await file('Egan Fundamentals.pdf', makePdf(['Oxygen toxicity occurs with prolonged high FiO2 exposure', 'Compliance is volume over pressure']));
+    const path = await file('Egan Fundamentals.pdf', makePdf(['Oxygen toxicity occurs with prolonged high FiO2 exposure. '.repeat(5), 'Compliance is volume over pressure']));
     const llm = routedLlm(() => {
       throw new Error('no model calls expected');
     });
