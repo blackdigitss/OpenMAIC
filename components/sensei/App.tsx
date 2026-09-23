@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 
 import { ConceptSheetBody } from './ConceptSheet';
 import { CalcDrill } from './Calc';
+import { CaseDrill } from './Case';
 import { CloseIcon, LibraryIcon, ReviewIcon, TodayIcon } from './icons';
 import { Library, LecturePage } from './Library';
 import { Player } from './Player';
@@ -104,6 +105,16 @@ function Shell() {
                   </button>
                 </div>
                 <CalcDrill formulaId={top.formulaId} />
+              </>
+            ) : top.kind === 'case' ? (
+              <>
+                <div className="s-sheet-bar">
+                  <span />
+                  <button aria-label="Close" onClick={closeSheets} style={{ width: 30, height: 30 }}>
+                    <CloseIcon />
+                  </button>
+                </div>
+                <CaseDrill family={top.family} />
               </>
             ) : top.kind === 'add' ? (
               <AddLectureSheet onClose={closeSheets} />

@@ -6,11 +6,12 @@ import { fmtDate, fmtTime, relDay, useApi, type GlossaryEntry, type LectureSumma
 import { PlayIcon, SearchIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
+import { BoardMap } from './Board';
 import { CourseTag, Row, Screen, Section, Segmented, Skeleton } from './ui';
 
 export function Library() {
   const { openConcept, push } = useSensei();
-  const [mode, setMode] = useState<'concepts' | 'lectures'>('concepts');
+  const [mode, setMode] = useState<'concepts' | 'lectures' | 'board'>('concepts');
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
   const { data: all } = useApi<GlossaryEntry[]>('glossary');
@@ -55,6 +56,7 @@ export function Library() {
           options={[
             { value: 'concepts', label: 'Concepts' },
             { value: 'lectures', label: 'Lectures' },
+            { value: 'board', label: 'Board exam' },
           ]}
           value={mode}
           onChange={setMode}
@@ -77,6 +79,8 @@ export function Library() {
             </div>
           )}
         </Section>
+      ) : mode === 'board' ? (
+        <BoardMap />
       ) : mode === 'concepts' ? (
         !all ? (
           <Section>

@@ -148,6 +148,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           }),
         );
       }
+      case 'board': {
+        const { boardReadiness } = await import('@/lib/sensei/board/readiness');
+        const { OUTLINE_SOURCE } = await import('@/lib/sensei/board/outline');
+        return ok({ ...(await boardReadiness(db)), source: OUTLINE_SOURCE });
+      }
+      case 'cases': {
+        const { unlockedCases } = await import('@/lib/sensei/cases/unlock');
+        const { CASE_FAMILIES } = await import('@/lib/sensei/cases/families');
+        const unlocked = await unlockedCases(db);
+        return ok(CASE_FAMILIES.map((f) => ({ id: f.id, name: f.name, unlocked: unlocked.some((u) => u.family.id === f.id) })));
+      }
       case 'budget':
         return ok({ ...(await monthSpend()), budgetUsd: (await getSettings(db)).budgetUsd });
       case 'settings': {

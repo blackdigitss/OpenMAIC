@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { api, invalidate, useApi, type CalcItem, type ReviewCard, type TodayData } from './api';
 import { CalcProblem } from './Calc';
+import { CaseQuestion } from './Case';
 import { CheckIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -21,6 +22,7 @@ export function ReviewTab() {
   const { startReview, openConcept, openSheet } = useSensei();
   const { data } = useApi<TodayData>('today');
   const { data: calc } = useApi<CalcItem[]>('calc');
+  const { data: cases } = useApi<{ id: string; name: string; unlocked: boolean }[]>('cases');
   const { data: weak } = useApi<{ id: string; name: string; shortDefinition: string | null; lapses: number }[]>('weak');
   const s = data?.stats;
   const total = s ? s.due + Math.min(s.newCards, 15) : 0;
@@ -71,6 +73,18 @@ export function ReviewTab() {
                 ))}
             </div>
           )}
+        </Section>
+      )}
+
+      {cases?.some((c) => c.unlocked) && (
+        <Section title="Clinical cases" footer="Board-style scenarios: one best answer, what the RT should do next. A new case every time, scored by the rules, not by AI.">
+          <div className="s-list">
+            {cases
+              .filter((c) => c.unlocked)
+              .map((c) => (
+                <Row key={c.id} title={c.name} onClick={() => openSheet({ kind: 'case', family: c.id })} />
+              ))}
+          </div>
         </Section>
       )}
 
@@ -189,7 +203,7 @@ export function ReviewSession() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -40 }}
               transition={{ duration: 0.22 }}
-              onClick={() => !shown && !card.formulaId && setShown(true)}
+              onClick={() => !shown && !card.formulaId && !card.caseFamily && setShown(true)}
             >
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className="s-pill tint">{COMPETENCY[card.competency]}</span>
@@ -205,7 +219,11 @@ export function ReviewSession() {
                   {card.conceptName}
                 </button>
               </div>
-              {card.formulaId ? (
+              {card.caseFamily ? (
+                <div style={{ marginTop: 18 }}>
+                  <CaseQuestion family={card.caseFamily} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} doneLabel="Continue" />
+                </div>
+              ) : card.formulaId ? (
                 <div style={{ marginTop: 18 }}>
                   <CalcProblem formulaId={card.formulaId} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} doneLabel="Continue" />
                 </div>
@@ -229,7 +247,7 @@ export function ReviewSession() {
               )}
             </motion.div>
           </AnimatePresence>
-          {card.formulaId ? null : shown ? (
+          {card.formulaId || card.caseFamily ? null : shown ? (
             <div className="s-rate">
               <button onClick={() => rate(1)} style={{ color: 'var(--red)' }}>
                 Again<span>{card.intervals[1]}</span>

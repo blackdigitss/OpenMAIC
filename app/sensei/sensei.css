@@ -1345,3 +1345,42 @@ a.s-row:active,
   line-height: 22px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Multiple choice */
+.s-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--fill);
+  font-size: 16px;
+  line-height: 21px;
+  text-align: left;
+  transition: background 0.15s, opacity 0.15s;
+}
+.s-option:active:not([disabled]) {
+  background: var(--fill-2);
+}
+.s-option-letter {
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--cell);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--label-2);
+}
+.s-option[data-state='right'] {
+  background: color-mix(in srgb, var(--green) 16%, var(--cell));
+}
+.s-option[data-state='wrong'] {
+  background: color-mix(in srgb, var(--red) 14%, var(--cell));
+}
+.s-option[data-state='dim'] {
+  opacity: 0.55;
+}

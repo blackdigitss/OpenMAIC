@@ -77,6 +77,7 @@ export interface ReviewCard {
   isNew: boolean;
   intervals: Record<1 | 2 | 3 | 4, string>;
   formulaId: string | null;
+  caseFamily: string | null;
 }
 
 export interface CalcItem {

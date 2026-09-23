@@ -310,6 +310,8 @@ async function studyLecture(
   // Calculation practice for any formula whose concept is now taught.
   const { syncCalcCards } = await import('./calc/unlock');
   await syncCalcCards(db);
+  const { syncCaseCards } = await import('./cases/unlock');
+  await syncCaseCards(db);
 
   const concepts = await conceptsNeedingCards(db, lectureId);
   for (const [i, id] of concepts.entries()) {
