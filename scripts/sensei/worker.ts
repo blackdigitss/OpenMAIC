@@ -72,6 +72,11 @@ async function main() {
   }
 
   log(`worker up · inbox ${config.inboxDir} · app ${appUrl}`);
+  if (once) {
+    // Single pass: two scans so the size-stability check can pass.
+    await scanInbox().catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 1500));
+  }
   for (;;) {
     // Heartbeat: the app shows a warning if this goes stale (worker stopped).
     await writeFile(join(config.home, 'worker-heartbeat'), new Date().toISOString()).catch(() => undefined);
