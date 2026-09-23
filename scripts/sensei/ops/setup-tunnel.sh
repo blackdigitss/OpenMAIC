@@ -11,8 +11,9 @@ code=$(envget ACCESS_CODE)
 [ ${#code} -lt 6 ] && { echo "Set ACCESS_CODE (6+ characters) in $ENV_FILE first."; exit 1; }
 
 api() { # method path [json]
-  curl -s -X "$1" "https://api.cloudflare.com/client/v4$2" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-    -H "Content-Type: application/json" ${3:+--data "$3"}
+  local args=(-s -X "$1" "https://api.cloudflare.com/client/v4$2" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+  [ -n "$3" ] && args+=(--data "$3")
+  curl "${args[@]}"
 }
 py() { /usr/bin/python3 -c "import json,sys; d=json.load(sys.stdin); $1"; }
 
