@@ -267,6 +267,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <NotificationsSection />
           <BudgetSection />
           <ModulesSection />
+          <BackupSection />
           <Section title="About" footer="Sensei is a study aid. Its explanations are for learning, not for real patient care.">
             <div className="s-list">
               <div className="s-row">
@@ -440,6 +441,33 @@ function BudgetSection() {
               void reloadSettings();
             }}
           />
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function BackupSection() {
+  const { data: s } = useApi<SettingsData>('settings');
+  if (!s) return null;
+  const when = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Not yet');
+  return (
+    <Section title="Backups" footer="Every night your notes and recordings are backed up on this Mac and to iCloud Drive (“Sensei Backups”). Once a month Sensei restores a copy on the side to prove it works.">
+      <div className="s-list">
+        <div className="s-row">
+          <div className="s-row-main">
+            <div className="s-row-title">Last backup</div>
+          </div>
+          <span className="s-trail">{when(s.lastBackup?.at)}</span>
+        </div>
+        <div className="s-row">
+          <div className="s-row-main">
+            <div className="s-row-title">Restore test</div>
+            {s.restoreCheck && !s.restoreCheck.ok && <div className="s-row-sub" style={{ color: 'var(--red)', whiteSpace: 'normal' }}>{s.restoreCheck.problems[0]}</div>}
+          </div>
+          <span className="s-trail" style={{ color: s.restoreCheck ? (s.restoreCheck.ok ? 'var(--green)' : 'var(--red)') : undefined }}>
+            {s.restoreCheck ? `${s.restoreCheck.ok ? 'Passed' : 'Failed'} ${when(s.restoreCheck.at)}` : 'First one on the 1st'}
+          </span>
         </div>
       </div>
     </Section>

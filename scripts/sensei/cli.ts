@@ -102,26 +102,31 @@ async function main() {
       break;
     }
     case 'backup': {
+      // Nightly (launchd 3:30). On the 1st of each month, or with --verify, also prove it restores.
       const config = senseiConfig();
-      const dir = join(config.home, 'backups');
-      await mkdir(dir, { recursive: true });
-      const file = join(dir, `sensei-${new Date().toISOString().slice(0, 10)}.dump`);
-      await promisify(execFile)('pg_dump', ['-Fc', '-f', file, config.databaseUrl]);
-      // Keep 14 local dumps.
-      const { readdir, rm, copyFile } = await import('fs/promises');
-      const dumps = (await readdir(dir)).filter((f) => f.endsWith('.dump')).sort();
-      for (const old of dumps.slice(0, -14)) await rm(join(dir, old));
-      // Off the Mac: iCloud Drive keeps the latest dump and a mirror of every recording/slide/textbook.
-      const cloud = process.env.SENSEI_BACKUP_DIR ?? join(process.env.HOME ?? '', 'Library/Mobile Documents/com~apple~CloudDocs/Sensei Backups');
-      await mkdir(join(cloud, 'database'), { recursive: true });
-      await copyFile(file, join(cloud, 'database', 'sensei-latest.dump'));
-      await copyFile(file, join(cloud, 'database', `sensei-${new Date().toISOString().slice(0, 7)}.dump`)); // one per month
-      await promisify(execFile)('rsync', ['-a', '--ignore-existing', `${config.libraryDir}/`, join(cloud, 'files')]);
-      console.log(`Backed up to ${file} and ${cloud}`);
+      const { backup, restoreCheck } = await import('@/lib/sensei/backup');
+      const { setState } = await import('@/lib/sensei/settings');
+      const { file } = await backup(db, config);
+      await setState(db, 'lastBackup', { at: new Date().toISOString(), file });
+      console.log(`Backed up to ${file}`);
+      if (args.includes('--verify') || new Date().getDate() === 1) {
+        const updating = await promisify(execFile)('pgrep', ['-f', 'sensei/ops/update.sh']).then(() => true, () => false);
+        if (updating && !args.includes('--verify')) {
+          console.log('Restore check skipped: an update is running; will run tomorrow.');
+          break;
+        }
+        const result = await restoreCheck(db, config);
+        await setState(db, 'restoreCheck', result);
+        console.log(result.ok ? `Restore check passed (${result.dump}).` : `Restore check FAILED: ${result.problems.join('; ')}`);
+        if (!result.ok) {
+          const { notifyStudent } = await import('@/lib/sensei/notify');
+          await notifyStudent(db, 'failures', { title: 'Backup check failed', body: result.problems.join('; ').slice(0, 180), tag: 'backup' });
+        }
+      }
       break;
     }
     default:
-      console.log('Commands: migrate | course | schedule | add | reprocess | stats | backup');
+      console.log('Commands: migrate | course | schedule | add | reprocess | stats | backup [--verify] | notify | push-keys | board-tags');
   }
   await closeSenseiDb();
 }
