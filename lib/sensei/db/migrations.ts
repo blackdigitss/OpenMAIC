@@ -401,6 +401,40 @@ CREATE TABLE sensei_concept_textbook (
 );
 `,
   },
+  {
+    id: '0009_reels',
+    sql: `
+-- One verified clip per (fact, transcript segment): exact word-level bounds, or dropped.
+CREATE TABLE sensei_clip (
+  record_id UUID NOT NULL REFERENCES sensei_knowledge_record(id),
+  unit_id UUID NOT NULL REFERENCES sensei_source_unit(id),
+  audio_source_id UUID NOT NULL REFERENCES sensei_source(id),
+  status TEXT NOT NULL CHECK (status IN ('ok','dropped')),
+  start_ms INT,
+  end_ms INT,
+  text TEXT,
+  reason TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (record_id, unit_id)
+);
+
+-- "Hear it from your professor" reels: a lecture, a module, or your trouble spots.
+CREATE TABLE sensei_reel (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','building','ready','empty','failed')),
+  file TEXT,
+  duration_ms INT,
+  chapters JSONB NOT NULL DEFAULT '[]'::jsonb,
+  clip_hash TEXT,
+  total INT NOT NULL DEFAULT 0,
+  dropped INT NOT NULL DEFAULT 0,
+  error TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+`,
+  },
 ];
 
 export interface MigrationQueryable {
