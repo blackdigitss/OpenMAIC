@@ -90,6 +90,7 @@ git rev-parse HEAD > "$idle/.sensei-good"
 ln -sfn "$idle" "$CURRENT"
 launchctl kickstart -k "gui/$UID/com.sensei.app"
 launchctl kickstart -k "gui/$UID/com.sensei.worker"
+launchctl kickstart -k "gui/$UID/com.sensei.gate" 2>/dev/null
 # Advance the branch only if nobody committed to it during the build.
 git update-ref refs/heads/sensei HEAD "$base" || log "sensei branch moved during the update; left unchanged"
 # Keep the fork's main a clean mirror of upstream (the established weekly habit).

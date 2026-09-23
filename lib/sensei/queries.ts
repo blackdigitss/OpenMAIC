@@ -207,6 +207,7 @@ export interface ConceptDetail {
     unlocks: number; firstSeen: string | null; lastSeen: string | null; clinicalSafety: boolean;
   };
   textbook: TextbookPassage[];
+  scope: { durability: 'core' | 'module'; by: 'model' | 'user' | null; reason: string | null; modules: string[]; retired: boolean };
   records: ConceptRecord[];
   relations: { direction: 'out' | 'in'; type: string; concept: { id: string; name: string; shortDefinition: string | null } }[];
   mastery: Awaited<ReturnType<typeof conceptMastery>>;
@@ -310,9 +311,62 @@ export async function conceptDetail(db: Db, conceptId: string): Promise<ConceptD
       concept: { id: r.id as string, name: r.canonical_name as string, shortDefinition: (r.short_definition as string) ?? null },
     })),
     mastery: await conceptMastery(db, conceptId),
+    scope: await conceptScope(db, conceptId),
     textbook: await textbookPassages(db, [r0.canonical_name as string, ...aliases.map((a) => a.alias).filter((a) => a.length > 3)], 3),
     cards: { total: Number(cards[0].total), due: Number(cards[0].due) },
   };
+}
+
+export async function conceptScope(db: Db, conceptId: string): Promise<ConceptDetail['scope']> {
+  const { rows } = await db.query<Record<string, unknown>>(
+    `SELECT sc.effective_durability, sc.retired, c.durability_by, c.durability_reason,
+            (SELECT array_agg(DISTINCT co.code || ' Module ' || m.number ORDER BY co.code || ' Module ' || m.number)
+               FROM sensei_knowledge_record r
+               JOIN sensei_record_evidence e ON e.record_id = r.id AND e.superseded_at IS NULL
+               JOIN sensei_lecture l ON l.id = e.lecture_id
+               JOIN sensei_module m ON m.course_id = l.course_id AND l.lecture_date BETWEEN m.start_date AND m.end_date
+               JOIN sensei_course co ON co.id = m.course_id
+              WHERE r.concept_id = c.id AND r.superseded_at IS NULL) AS modules
+       FROM sensei_concept c JOIN sensei_concept_scope sc ON sc.concept_id = c.id WHERE c.id = $1`,
+    [conceptId],
+  );
+  const r = rows[0] ?? {};
+  return {
+    durability: (r.effective_durability as 'core' | 'module') ?? 'core',
+    by: (r.durability_by as 'model' | 'user') ?? null,
+    reason: (r.durability_reason as string) ?? null,
+    modules: (r.modules as string[]) ?? [],
+    retired: Boolean(r.retired),
+  };
+}
+
+export interface ModuleInfo {
+  id: string;
+  courseCode: string;
+  number: number;
+  title: string;
+  instructor: string | null;
+  topics: string | null;
+  start: string;
+  end: string;
+  estimated: boolean;
+}
+
+export async function listModules(db: Db): Promise<ModuleInfo[]> {
+  const { rows } = await db.query<Record<string, unknown>>(
+    `SELECT m.*, c.code FROM sensei_module m JOIN sensei_course c ON c.id = m.course_id ORDER BY m.start_date, c.code`,
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    courseCode: r.code as string,
+    number: r.number as number,
+    title: r.title as string,
+    instructor: (r.instructor as string) ?? null,
+    topics: (r.topics as string) ?? null,
+    start: day(r.start_date)!,
+    end: day(r.end_date)!,
+    estimated: Boolean(r.dates_estimated),
+  }));
 }
 
 export interface TextbookPassage {
@@ -520,8 +574,11 @@ export async function stats(db: Db) {
     `SELECT (SELECT count(*) FROM sensei_concept c JOIN sensei_concept_signals s ON s.concept_id = c.id WHERE s.lecture_count > 0) AS concepts,
             (SELECT count(*) FROM sensei_knowledge_record WHERE superseded_at IS NULL AND verification <> 'rejected') AS facts,
             (SELECT count(*) FROM sensei_lecture) AS lectures,
-            (SELECT count(*) FROM sensei_card WHERE due <= now() AND NOT suspended AND state <> 0) AS due,
-            (SELECT count(*) FROM sensei_card WHERE due <= now() AND NOT suspended AND state = 0) AS new_cards,
+            (SELECT count(*) FROM sensei_card k WHERE due <= now() AND NOT suspended AND state <> 0
+               AND NOT EXISTS (SELECT 1 FROM sensei_concept_scope sc WHERE sc.concept_id = k.concept_id AND sc.retired)) AS due,
+            (SELECT count(*) FROM sensei_card k WHERE due <= now() AND NOT suspended AND state = 0
+               AND NOT EXISTS (SELECT 1 FROM sensei_concept_scope sc WHERE sc.concept_id = k.concept_id AND sc.retired)) AS new_cards,
+            (SELECT count(*) FROM sensei_concept_scope WHERE retired) AS retired,
             (SELECT count(DISTINCT date(reviewed_at)) FROM sensei_review_log WHERE reviewed_at > now() - interval '7 days') AS active_days,
             (SELECT count(*) FROM sensei_review_log WHERE reviewed_at::date = current_date) AS reviewed_today`,
   );
@@ -534,6 +591,7 @@ export async function stats(db: Db) {
     newCards: Number(r.new_cards),
     activeDays: Number(r.active_days),
     reviewedToday: Number(r.reviewed_today),
+    retired: Number(r.retired),
   };
 }
 

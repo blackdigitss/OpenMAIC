@@ -1273,3 +1273,16 @@ a.s-row:active,
     --gutter: 20px;
   }
 }
+
+.s-field-inline input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  background: var(--fill);
+  color: var(--label);
+  font: inherit;
+  font-size: 15px;
+  padding: 6px 10px;
+  font-variant-numeric: tabular-nums;
+}

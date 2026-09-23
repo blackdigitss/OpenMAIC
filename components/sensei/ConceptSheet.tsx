@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { api, fmtDate, fmtTime, humanNote, useApi, type ConceptDetail, type SenseiAnswer } from './api';
+import { api, fmtDate, fmtTime, humanNote, invalidate, useApi, type ConceptDetail, type SenseiAnswer } from './api';
 import { ArrowUpIcon, BackChevron, CloseIcon, PlayIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -166,6 +166,7 @@ function ConceptContent({ c }: { c: ConceptDetail }) {
         </Section>
       )}
 
+      <Durability c={c} />
       <Memory c={c} onReview={() => startReview(c.id)} />
       <Ask conceptId={c.id} name={c.name} />
     </div>
@@ -259,6 +260,45 @@ function Evolution({ c }: { c: ConceptDetail }) {
             )}
           </div>
         ))}
+      </div>
+    </Section>
+  );
+}
+
+/** Keep reviewing after the module, or let it go? The model guesses; one tap overrides. */
+function Durability({ c }: { c: ConceptDetail }) {
+  const { toast } = useSensei();
+  const s = c.scope;
+  const set = async (value: 'core' | 'module') => {
+    await api(`concept/${c.id}/durability`, { method: 'POST', body: JSON.stringify({ value }) });
+    invalidate(`concept/${c.id}`, 'today');
+    toast(value === 'core' ? 'Sensei will keep reviewing this' : 'Retires when its module ends');
+  };
+  return (
+    <Section
+      title="After this module"
+      footer={
+        s.durability === 'core'
+          ? s.modules.length > 1
+            ? `Came back in ${s.modules.join(' and ')}, so it stays in your reviews for the long run.`
+            : 'Foundational: stays in your reviews after the module ends, spaced further apart as you master it.'
+          : s.retired
+            ? 'Its module is over, so Sensei stopped reviewing it. It stays in your Library.'
+            : 'Tested in this module only. Reviewed until the module ends, then retired (kept in your Library).'
+      }
+    >
+      <div className="s-list">
+        <div className="s-row">
+          <div className="s-row-main">
+            <div className="s-row-title">{s.durability === 'core' ? 'Keeps mattering' : 'Module detail'}</div>
+            <div className="s-row-sub" style={{ whiteSpace: 'normal' }}>
+              {s.by === 'user' ? 'Your choice' : s.reason ?? (s.modules[0] ?? '')}
+            </div>
+          </div>
+          <button className="s-btn small gray" onClick={() => set(s.durability === 'core' ? 'module' : 'core')}>
+            {s.durability === 'core' ? 'Only this module' : 'Keep reviewing'}
+          </button>
+        </div>
       </div>
     </Section>
   );

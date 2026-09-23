@@ -6,10 +6,10 @@
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import type { ConceptDetail, GlossaryEntry, LectureDigest, LectureSummary, LectureUnitView, TermLink } from '@/lib/sensei/queries';
+import type { ConceptDetail, GlossaryEntry, LectureDigest, LectureSummary, LectureUnitView, ModuleInfo, TermLink } from '@/lib/sensei/queries';
 import type { SenseiAnswer } from '@/lib/sensei/ask';
 
-export type { ConceptDetail, GlossaryEntry, LectureDigest, LectureSummary, LectureUnitView, TermLink, SenseiAnswer };
+export type { ConceptDetail, GlossaryEntry, LectureDigest, LectureSummary, LectureUnitView, ModuleInfo, TermLink, SenseiAnswer };
 
 export interface Course {
   id: string;
@@ -37,11 +37,12 @@ export interface TodayData {
     recordId: string; conceptId: string; conceptName: string; statement: string; notes: string[];
     quote: string | null; startMs: number | null; audioSourceId: string | null; lectureTitle: string | null;
   }[];
-  stats: { concepts: number; facts: number; lectures: number; due: number; newCards: number; activeDays: number; reviewedToday: number };
+  stats: { concepts: number; facts: number; lectures: number; due: number; newCards: number; activeDays: number; reviewedToday: number; retired: number };
   jobs: Job[];
   week: { date: string; concepts: number }[];
   courses: Course[];
   coverage: { deckTitle: string; pages: number; covered: number } | null;
+  module: ModuleInfo | null;
   hasKey: boolean;
   system: { workerAlive: boolean; workerSeen: boolean; update: { state: string; message: string; at: string } | null };
 }

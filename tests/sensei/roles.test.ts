@@ -59,7 +59,7 @@ function routedLlm(extract: (prompt: string) => Extraction): StructuredLlm & { e
         return req.schema.parse(extract(req.prompt));
       }
       if (/title and summarize/.test(req.system)) return req.schema.parse({ title: 'Oxygen Delivery', summary: 'Covered cannulas.' });
-      return req.schema.parse({ cards: [] });
+      return req.schema.parse({ durability: 'core', durability_reason: 'test', cards: [] });
     },
   };
 }

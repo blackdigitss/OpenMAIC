@@ -12,6 +12,7 @@ case "$1" in
     # Loopback only: the phone reaches Sensei through the Cloudflare Tunnel, never the LAN.
     exec node_modules/.bin/next start -H 127.0.0.1 -p "${SENSEI_PORT:-3000}" ;;
   worker) exec node_modules/.bin/tsx scripts/sensei/worker.ts ;;
+  gate) exec node_modules/.bin/tsx scripts/sensei/gate.ts ;;
   backup) exec node_modules/.bin/tsx scripts/sensei/cli.ts backup ;;
-  *) echo "usage: serve.sh app|worker|backup"; exit 2 ;;
+  *) echo "usage: serve.sh app|worker|gate|backup"; exit 2 ;;
 esac

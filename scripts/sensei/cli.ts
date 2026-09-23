@@ -1,7 +1,7 @@
 /**
  * Sensei admin CLI.
  *   tsx scripts/sensei/cli.ts migrate
- *   tsx scripts/sensei/cli.ts add <file...> --course RESP101 [--date 2026-09-23] [--title "..."]
+ *   tsx scripts/sensei/cli.ts add <file...> --course RESP101 [--date 2026-09-23] [--title "..."] [--role slides|textbook|recording]
  *   tsx scripts/sensei/cli.ts course <CODE> "<Title>" [--color "#0A84FF"]
  *   tsx scripts/sensei/cli.ts schedule <CODE> <weekday 0-6> <HH:MM> <HH:MM>
  *   tsx scripts/sensei/cli.ts reprocess <lectureId>
@@ -55,8 +55,11 @@ async function main() {
       const course = flag(args, 'course');
       const date = flag(args, 'date');
       const title = flag(args, 'title');
+      const role = flag(args, 'role'); // slides | textbook | recording
       const { enqueueLecture } = await import('@/lib/sensei/jobs');
-      const job = await enqueueLecture(db, { files: args.map((f) => resolve(f)), courseCode: course, date, title });
+      const files = args.map((f) => resolve(f));
+      const roles = role ? Object.fromEntries(files.map((f) => [f, role])) : null;
+      const job = await enqueueLecture(db, { files, courseCode: course, date, title, roles, bookOnly: role === 'textbook' });
       console.log(`Queued job ${job.jobId} (${job.status}). The worker will pick it up.`);
       break;
     }

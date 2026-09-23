@@ -19,6 +19,7 @@ import { geminiLlm, MissingApiKeyError } from '@/lib/sensei/llm';
 import {
   conceptDetail,
   deckCoverage,
+  listModules,
   listTextbooks,
   flaggedForReview,
   glossary,
@@ -85,6 +86,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           })),
           week: week.map((w) => ({ date: w.lecture_date, concepts: Number(w.concepts) })),
           courses: await courses(),
+          module:
+            (await listModules(db)).find((m) => {
+              const t = new Date().toISOString().slice(0, 10);
+              return m.start <= t && t <= m.end;
+            }) ?? null,
           hasKey: Boolean(senseiConfig().googleApiKey),
           system: await systemStatus(),
         });
@@ -124,6 +130,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return ok(await courses());
       case 'textbooks':
         return ok(await listTextbooks(db));
+      case 'modules':
+        return ok(await listModules(db));
       case 'audio':
         return streamAudio(req, id);
       default:
@@ -185,6 +193,19 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const body = (await req.json()) as { cardId: string; rating: Rating };
         if (!UUID.test(body.cardId) || ![1, 2, 3, 4].includes(body.rating)) return fail(400, 'Bad review');
         return ok(await reviewCard(db, body.cardId, body.rating));
+      }
+      case 'concept': {
+        // POST /concept/<id>/durability { value: 'core' | 'module' } — the student's call wins.
+        const body = (await req.json()) as { value: 'core' | 'module' };
+        if (!id || !UUID.test(id) || action !== 'durability' || !['core', 'module'].includes(body.value)) return fail(400, 'Bad request');
+        await db.query(`UPDATE sensei_concept SET durability = $2, durability_by = 'user' WHERE id = $1`, [id, body.value]);
+        return ok({ ok: true });
+      }
+      case 'modules': {
+        const body = (await req.json()) as { id: string; start: string; end: string };
+        if (!UUID.test(body.id) || !/^\d{4}-\d{2}-\d{2}$/.test(body.start) || !/^\d{4}-\d{2}-\d{2}$/.test(body.end)) return fail(400, 'Bad dates');
+        await db.query(`UPDATE sensei_module SET start_date = $2, end_date = $3, dates_estimated = false WHERE id = $1`, [body.id, body.start, body.end]);
+        return ok(await listModules(db));
       }
       case 'flag': {
         const body = (await req.json()) as { decision: 'confirm' | 'reject' };

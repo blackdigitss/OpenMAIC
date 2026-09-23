@@ -294,6 +294,55 @@ LEFT JOIN sensei_lecture l ON l.id = e.lecture_id
 GROUP BY c.id;
 `,
   },
+  {
+    id: '0004_modules_durability',
+    sql: `
+-- Each semester is three 5-week modules, each with its own professor and exams.
+CREATE TABLE sensei_module (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID NOT NULL REFERENCES sensei_course(id),
+  number INT NOT NULL,
+  title TEXT NOT NULL,
+  instructor TEXT,
+  topics TEXT,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  dates_estimated BOOLEAN NOT NULL DEFAULT false,
+  UNIQUE (course_id, number)
+);
+
+-- Will this keep mattering after its module? "core" = keep reviewing for the long run
+-- (calculations, normal values, safety, clinical practice, boards); "module" = tested in
+-- this module only (e.g. industrial processes, storage infrastructure specifics).
+ALTER TABLE sensei_concept ADD COLUMN durability TEXT CHECK (durability IN ('core','module'));
+ALTER TABLE sensei_concept ADD COLUMN durability_by TEXT CHECK (durability_by IN ('model','user'));
+ALTER TABLE sensei_concept ADD COLUMN durability_reason TEXT;
+
+-- Per concept: which modules taught it, the effective durability, and whether it has retired.
+-- A concept that comes back in a later module is core, whatever the first guess was.
+CREATE VIEW sensei_concept_scope AS
+WITH taught AS (
+  SELECT DISTINCT r.concept_id, m.id AS module_id, m.end_date
+    FROM sensei_knowledge_record r
+    JOIN sensei_record_evidence e ON e.record_id = r.id AND e.superseded_at IS NULL
+    JOIN sensei_lecture l ON l.id = e.lecture_id
+    JOIN sensei_module m ON m.course_id = l.course_id AND l.lecture_date BETWEEN m.start_date AND m.end_date
+   WHERE r.superseded_at IS NULL
+)
+SELECT c.id AS concept_id,
+       count(DISTINCT t.module_id) AS module_count,
+       max(t.end_date) AS last_module_end,
+       CASE WHEN c.durability_by = 'user' THEN c.durability
+            WHEN count(DISTINCT t.module_id) >= 2 THEN 'core'
+            ELSE coalesce(c.durability, 'core') END AS effective_durability,
+       (CASE WHEN c.durability_by = 'user' THEN c.durability
+             WHEN count(DISTINCT t.module_id) >= 2 THEN 'core'
+             ELSE coalesce(c.durability, 'core') END) = 'module'
+         AND max(t.end_date) < current_date AS retired
+  FROM sensei_concept c LEFT JOIN taught t ON t.concept_id = c.id
+ GROUP BY c.id;
+`,
+  },
 ];
 
 export interface MigrationQueryable {

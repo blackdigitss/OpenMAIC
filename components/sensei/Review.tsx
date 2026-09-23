@@ -24,7 +24,10 @@ export function ReviewTab() {
   const total = s ? s.due + Math.min(s.newCards, 15) : 0;
   const done = s?.reviewedToday ?? 0;
   return (
-    <Screen title="Review" subtitle="Spaced practice from your own lectures">
+    <Screen
+      title="Review"
+      subtitle={data?.module ? `${data.module.courseCode} Module ${data.module.number}${data.module.instructor ? ` with ${data.module.instructor}` : ''}, plus everything that keeps mattering` : 'Spaced practice from your own lectures'}
+    >
       <div className="s-card" style={{ marginTop: 8, textAlign: 'center', padding: '24px 16px 18px' }}>
         <div style={{ display: 'grid', placeItems: 'center' }}>
           <Ring value={total + done > 0 ? done / (total + done) : 1} size={132} stroke={14} color={total === 0 ? 'var(--green)' : 'var(--tint)'}>
@@ -47,6 +50,12 @@ export function ReviewTab() {
           {done > 0 && total > 0 ? 'Keep going' : 'Start review'}
         </button>
       </div>
+
+      {!!s?.retired && (
+        <p className="s-foot" style={{ padding: '10px 20px 0' }}>
+          {s.retired} details from finished modules are retired from review. They stay in your Library.
+        </p>
+      )}
 
       {weak && weak.length > 0 && (
         <Section title="Keeps slipping" footer="Concepts you’ve missed more than once. Tap one to see what your professor said.">

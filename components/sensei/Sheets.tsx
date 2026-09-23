@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 
-import { api, COURSE_COLORS, invalidate, useApi, type Course } from './api';
+import { api, COURSE_COLORS, invalidate, useApi, type Course, type ModuleInfo } from './api';
 import { CloseIcon, DocIcon, MicIcon } from './icons';
 import { useSensei } from './store';
 import { Section } from './ui';
@@ -264,6 +264,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           </Section>
+          <ModulesSection />
           <Section title="About" footer="Sensei is a study aid. Its explanations are for learning, not for real patient care.">
             <div className="s-list">
               <div className="s-row">
@@ -279,6 +280,43 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         </>
       )}
     </>
+  );
+}
+
+function ModulesSection() {
+  const { data: modules, reload } = useApi<ModuleInfo[]>('modules');
+  if (!modules?.length) return null;
+  const save = async (m: ModuleInfo, start: string, end: string) => {
+    await api('modules', { method: 'POST', body: JSON.stringify({ id: m.id, start, end }) });
+    void reload();
+    invalidate('today');
+  };
+  return (
+    <Section
+      title="Modules"
+      footer={modules.some((m) => m.estimated) ? 'Dates marked “estimated” come from the college calendar. Adjust them if your professor’s dates differ.' : 'When a module ends, its one-time details retire from review; foundational concepts keep going.'}
+    >
+      <div className="s-list">
+        {modules.map((m) => (
+          <div key={m.id} className="s-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <div className="s-row-title">
+                {m.courseCode} Module {m.number}
+              </div>
+              {m.estimated && <span className="s-pill muted">Estimated</span>}
+            </div>
+            <div className="s-row-sub" style={{ whiteSpace: 'normal' }}>
+              {[m.instructor, m.title].filter(Boolean).join(', ')}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} className="s-field-inline">
+              <input type="date" defaultValue={m.start} onBlur={(e) => e.target.value !== m.start && save(m, e.target.value, m.end)} aria-label="Starts" />
+              <span className="c2">to</span>
+              <input type="date" defaultValue={m.end} onBlur={(e) => e.target.value !== m.end && save(m, m.start, e.target.value)} aria-label="Ends" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </Section>
   );
 }
 
