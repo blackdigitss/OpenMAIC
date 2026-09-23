@@ -139,6 +139,11 @@ async function main() {
     await checkBudget().catch((e) => log(`budget check failed: ${e.message}`));
     // Opt-in: hold new lectures (they stay queued) once the monthly budget is reached.
     const job = budgetPaused ? null : await claimJob(db);
+    if (!job) {
+      // Between lectures: build any requested reel (one per loop).
+      const { buildNextReel } = await import('@/lib/sensei/reels/build');
+      if (await buildNextReel(db, log).catch((e) => (log(`reel failed: ${e.message}`), false))) continue;
+    }
     if (job) {
       log(`job ${job.id} started`);
       await runJob({ db, llm, appUrl, accessCode: process.env.ACCESS_CODE, notify }, job)

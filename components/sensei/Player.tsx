@@ -17,7 +17,7 @@ function seekTo(t: number) {
 
 /** Floating now-playing bar for lecture audio (above the tab bar, or over a sheet). */
 export function Player({ inSheet }: { inSheet?: boolean }) {
-  const { track, stopPlayer } = useSensei();
+  const { track, stopPlayer, openConcept } = useSensei();
   const [, force] = useState(0);
   useEffect(() => {
     if (!track) return;
@@ -30,6 +30,8 @@ export function Player({ inSheet }: { inSheet?: boolean }) {
   if (!track) return null;
   const a = sharedAudio();
   const dur = Number.isFinite(a.duration) ? a.duration : 0;
+  const nowMs = a.currentTime * 1000;
+  const chapter = track.chapters?.findLast((c) => c.offsetMs <= nowMs + 50) ?? null;
   return (
     <div className={`s-player${inSheet ? ' in-sheet' : ''}`} role="region" aria-label="Lecture audio">
       <div className="s-player-row">
@@ -63,6 +65,14 @@ export function Player({ inSheet }: { inSheet?: boolean }) {
           <CloseIcon />
         </button>
       </div>
+      {chapter && (
+        <button className="s-player-caption" onClick={() => openConcept(chapter.conceptId)}>
+          <span className="t-foot tint" style={{ fontWeight: 600 }}>
+            {chapter.conceptName} · {chapter.lectureTitle}
+          </span>
+          <span className="t-sub clamp2">“{chapter.text}”</span>
+        </button>
+      )}
       {dur > 0 && (
         <input
           type="range"

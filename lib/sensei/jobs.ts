@@ -326,6 +326,13 @@ async function studyLecture(
     await fillGap(db, llm, c).catch(() => undefined);
   }
 
+  // "Hear it from your professor": queue this class's key-moments reel (built by the worker).
+  if (opts.audio.length) {
+    const { requestReel } = await import('./reels/build');
+    const { rows: t } = await db.query<{ title: string }>('SELECT title FROM sensei_lecture WHERE id = $1', [lectureId]);
+    await requestReel(db, `lecture:${lectureId}`, `Key moments: ${t[0]?.title ?? 'class'}`);
+  }
+
   // Tonight's lesson is built from class sessions (decks feed them).
   if (deps.appUrl && isSession) {
     await progress(db, jobId, 'lesson', at(0.93), 'Building tonight’s lesson');

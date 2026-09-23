@@ -40,6 +40,21 @@ export interface BudgetData {
   budgetUsd: number;
 }
 
+export interface Reel {
+  id: string;
+  key?: string;
+  title: string;
+  status: 'queued' | 'building' | 'ready' | 'empty' | 'failed';
+  durationMs: number | null;
+  chapters: import('./store').PlayerChapter[];
+  total?: number;
+  dropped?: number;
+  /** Changes whenever the reel is rebuilt, so the phone never plays a cached old version. */
+  v?: string | null;
+}
+
+export const reelUrl = (r: Reel) => `/api/sensei/reels/${r.id}?v=${(r.v ?? '').slice(0, 12)}`;
+
 export interface Job {
   id: string;
   status: 'queued' | 'running' | 'failed' | 'needs_course';
@@ -65,6 +80,7 @@ export interface TodayData {
   coverage: { deckTitle: string; pages: number; covered: number } | null;
   budget: { spent: number; budget: number; projected: number | null; paused: boolean };
   module: ModuleInfo | null;
+  reel: Reel | null;
   hasKey: boolean;
   system: { workerAlive: boolean; workerSeen: boolean; update: { state: string; message: string; at: string } | null };
 }
