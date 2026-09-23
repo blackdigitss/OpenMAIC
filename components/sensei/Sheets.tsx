@@ -760,6 +760,11 @@ function SpacingSection() {
             <div className="s-row-sub" style={{ whiteSpace: 'normal' }}>
               {status}
             </div>
+            {sp.collected < sp.needed && (
+              <div className="s-progress" style={{ marginTop: 8 }}>
+                <div style={{ width: `${Math.max(2, (sp.collected / sp.needed) * 100)}%` }} />
+              </div>
+            )}
           </div>
         </div>
         <div className="s-field">
@@ -767,11 +772,6 @@ function SpacingSection() {
           <Toggle on={sp.enabled} label="Spacing tuned to you" onChange={toggle} />
         </div>
       </div>
-      {sp.collected < sp.needed && (
-        <div className="s-progress" style={{ margin: '10px 16px 0' }}>
-          <div style={{ width: `${(sp.collected / sp.needed) * 100}%` }} />
-        </div>
-      )}
     </Section>
   );
 }
