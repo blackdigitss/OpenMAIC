@@ -76,6 +76,15 @@ export interface ReviewCard {
   back: string;
   isNew: boolean;
   intervals: Record<1 | 2 | 3 | 4, string>;
+  formulaId: string | null;
+}
+
+export interface CalcItem {
+  id: string;
+  name: string;
+  unlocked: boolean;
+  conceptId: string | null;
+  conceptName: string | null;
 }
 
 export interface LectureView extends LectureDigest {

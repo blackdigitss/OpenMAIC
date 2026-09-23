@@ -137,6 +137,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return ok(await listTextbooks(db));
       case 'modules':
         return ok(await listModules(db));
+      case 'calc': {
+        const { unlockedFormulas } = await import('@/lib/sensei/calc/unlock');
+        const { FORMULAS } = await import('@/lib/sensei/calc/formulas');
+        const unlocked = await unlockedFormulas(db);
+        return ok(
+          FORMULAS.map((f) => {
+            const u = unlocked.find((x) => x.formula.id === f.id);
+            return { id: f.id, name: f.name, unlocked: !!u, conceptId: u?.conceptId ?? null, conceptName: u?.conceptName ?? null };
+          }),
+        );
+      }
       case 'budget':
         return ok({ ...(await monthSpend()), budgetUsd: (await getSettings(db)).budgetUsd });
       case 'settings': {

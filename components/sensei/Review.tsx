@@ -3,7 +3,8 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { api, invalidate, useApi, type ReviewCard, type TodayData } from './api';
+import { api, invalidate, useApi, type CalcItem, type ReviewCard, type TodayData } from './api';
+import { CalcProblem } from './Calc';
 import { CheckIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -17,8 +18,9 @@ const COMPETENCY: Record<ReviewCard['competency'], string> = {
 };
 
 export function ReviewTab() {
-  const { startReview, openConcept } = useSensei();
+  const { startReview, openConcept, openSheet } = useSensei();
   const { data } = useApi<TodayData>('today');
+  const { data: calc } = useApi<CalcItem[]>('calc');
   const { data: weak } = useApi<{ id: string; name: string; shortDefinition: string | null; lapses: number }[]>('weak');
   const s = data?.stats;
   const total = s ? s.due + Math.min(s.newCards, 15) : 0;
@@ -51,6 +53,27 @@ export function ReviewTab() {
         </button>
       </div>
 
+      {calc && (
+        <Section
+          title="Calculations"
+          footer={
+            calc.some((c) => c.unlocked)
+              ? `Fresh numbers every time, checked by math, not AI. ${calc.filter((c) => !c.unlocked).length} more unlock as your classes cover them.`
+              : 'Formulas unlock as your classes teach them (cylinder duration, FiO2, compliance, and more).'
+          }
+        >
+          {calc.some((c) => c.unlocked) && (
+            <div className="s-list">
+              {calc
+                .filter((c) => c.unlocked)
+                .map((c) => (
+                  <Row key={c.id} title={c.name} sub={c.conceptName ? `From ${c.conceptName}` : undefined} onClick={() => openSheet({ kind: 'calc', formulaId: c.id })} />
+                ))}
+            </div>
+          )}
+        </Section>
+      )}
+
       {!!s?.retired && (
         <p className="s-foot" style={{ padding: '10px 20px 0' }}>
           {s.retired} details from finished modules are retired from review. They stay in your Library.
@@ -74,6 +97,13 @@ export function ReviewTab() {
       )}
     </Screen>
   );
+}
+
+/** Stable per card, position and day, so the numbers don't change while you type. */
+function seedFor(id: string, i: number): number {
+  let h = 2166136261;
+  for (const ch of `${id}:${i}:${new Date().toDateString()}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return h >>> 0;
 }
 
 /** Full-screen review session. */
@@ -159,7 +189,7 @@ export function ReviewSession() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -40 }}
               transition={{ duration: 0.22 }}
-              onClick={() => !shown && setShown(true)}
+              onClick={() => !shown && !card.formulaId && setShown(true)}
             >
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className="s-pill tint">{COMPETENCY[card.competency]}</span>
@@ -175,6 +205,12 @@ export function ReviewSession() {
                   {card.conceptName}
                 </button>
               </div>
+              {card.formulaId ? (
+                <div style={{ marginTop: 18 }}>
+                  <CalcProblem formulaId={card.formulaId} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} doneLabel="Continue" />
+                </div>
+              ) : (
+              <>
               <div className="t-title2" style={{ marginTop: 18, fontWeight: 600 }}>
                 {shown ? <TermText text={card.front} /> : card.front}
               </div>
@@ -189,9 +225,11 @@ export function ReviewSession() {
                   Think of your answer, then tap
                 </div>
               )}
+              </>
+              )}
             </motion.div>
           </AnimatePresence>
-          {shown ? (
+          {card.formulaId ? null : shown ? (
             <div className="s-rate">
               <button onClick={() => rate(1)} style={{ color: 'var(--red)' }}>
                 Again<span>{card.intervals[1]}</span>

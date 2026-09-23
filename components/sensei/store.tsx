@@ -10,7 +10,8 @@ export type SheetEntry =
   | { kind: 'concept'; id: string }
   | { kind: 'add' }
   | { kind: 'settings' }
-  | { kind: 'lesson'; url: string; title: string };
+  | { kind: 'lesson'; url: string; title: string }
+  | { kind: 'calc'; formulaId: string };
 
 export interface PlayerTrack {
   sourceId: string;
