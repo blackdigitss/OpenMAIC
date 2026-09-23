@@ -25,7 +25,9 @@ plist() { # label program-args-xml extra-xml
 </dict></plist>
 PL
   launchctl bootout "gui/$UID/$1" 2>/dev/null
-  launchctl bootstrap "gui/$UID" "$AGENTS/$1.plist"
+  # bootout is asynchronous; bootstrapping before it finishes fails with "Input/output error".
+  for i in {1..20}; do launchctl print "gui/$UID/$1" >/dev/null 2>&1 || break; sleep 0.5; done
+  launchctl bootstrap "gui/$UID" "$AGENTS/$1.plist" || { sleep 2; launchctl bootstrap "gui/$UID" "$AGENTS/$1.plist"; }
 }
 
 arg() { print -r -- "<string>$1</string>"; }
