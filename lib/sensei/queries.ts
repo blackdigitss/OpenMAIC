@@ -47,6 +47,9 @@ export interface LectureSummary {
   courseTitle: string;
   courseColor: string | null;
   status: string;
+  kind: 'session' | 'deck';
+  slideFrom: number | null;
+  slideTo: number | null;
   classroomUrl: string | null;
   job: { status: string; step: string | null; progress: number; detail: string | null; error: string | null } | null;
   conceptCount: number;
@@ -54,7 +57,7 @@ export interface LectureSummary {
 
 export async function listLectures(db: Db, limit = 30): Promise<LectureSummary[]> {
   const { rows } = await db.query<Record<string, unknown>>(
-    `SELECT l.id, l.title, l.lecture_date, l.status, l.classroom_url, c.code, c.title AS course_title, c.color,
+    `SELECT l.id, l.title, l.lecture_date, l.status, l.kind, l.slide_from, l.slide_to, l.classroom_url, c.code, c.title AS course_title, c.color,
             j.status AS job_status, j.step, j.progress, j.detail, j.error,
             (SELECT count(DISTINCT r.concept_id) FROM sensei_record_evidence e
                JOIN sensei_knowledge_record r ON r.id = e.record_id
@@ -72,6 +75,9 @@ export async function listLectures(db: Db, limit = 30): Promise<LectureSummary[]
     courseTitle: r.course_title as string,
     courseColor: (r.color as string) ?? null,
     status: r.status as string,
+    kind: (r.kind as 'session' | 'deck') ?? 'session',
+    slideFrom: (r.slide_from as number) ?? null,
+    slideTo: (r.slide_to as number) ?? null,
     classroomUrl: (r.classroom_url as string) ?? null,
     job: r.job_status
       ? {
@@ -196,7 +202,11 @@ export interface ConceptDetail {
   kind: string;
   shortDefinition: string | null;
   aliases: string[];
-  signals: { lectures: number; courses: number; emphasis: number; relations: number; unlocks: number; firstSeen: string | null; lastSeen: string | null; clinicalSafety: boolean };
+  signals: {
+    lectures: number; sessions: number; decks: number; courses: number; emphasis: number; relations: number;
+    unlocks: number; firstSeen: string | null; lastSeen: string | null; clinicalSafety: boolean;
+  };
+  textbook: TextbookPassage[];
   records: ConceptRecord[];
   relations: { direction: 'out' | 'in'; type: string; concept: { id: string; name: string; shortDefinition: string | null } }[];
   mastery: Awaited<ReturnType<typeof conceptMastery>>;
@@ -258,6 +268,8 @@ export async function conceptDetail(db: Db, conceptId: string): Promise<ConceptD
     aliases: aliases.map((a) => a.alias).filter((a) => a !== r0.canonical_name),
     signals: {
       lectures: Number(r0.lecture_count),
+      sessions: Number(r0.session_count ?? 0),
+      decks: Number(r0.deck_count ?? 0),
       courses: Number(r0.course_count),
       emphasis: Number(r0.emphasis_count),
       relations: Number(r0.relation_degree),
@@ -298,8 +310,73 @@ export async function conceptDetail(db: Db, conceptId: string): Promise<ConceptD
       concept: { id: r.id as string, name: r.canonical_name as string, shortDefinition: (r.short_definition as string) ?? null },
     })),
     mastery: await conceptMastery(db, conceptId),
+    textbook: await textbookPassages(db, [r0.canonical_name as string, ...aliases.map((a) => a.alias).filter((a) => a.length > 3)], 3),
     cards: { total: Number(cards[0].total), due: Number(cards[0].due) },
   };
+}
+
+export interface TextbookPassage {
+  sourceId: string;
+  book: string;
+  page: number;
+  snippet: string;
+  text: string;
+}
+
+/**
+ * Textbook/handbook pages that best match the given terms (Postgres full-text search,
+ * no model call). The ground-truth reference, consulted only when it's useful.
+ */
+export async function textbookPassages(db: Db, terms: string[], limit = 3): Promise<TextbookPassage[]> {
+  const query = [...new Set(terms.map((t) => t.trim()).filter(Boolean))].map((t) => `"${t.replace(/"/g, '')}"`).join(' or ');
+  if (!query) return [];
+  const { rows } = await db.query<Record<string, unknown>>(
+    `SELECT s.id AS source_id, s.title, u.page_no, u.text,
+            ts_headline('english', u.text, websearch_to_tsquery('english', $1),
+                        'MaxWords=45, MinWords=20, MaxFragments=1, StartSel=<<, StopSel=>>') AS snippet,
+            ts_rank(to_tsvector('english', u.text), websearch_to_tsquery('english', $1)) AS rank
+       FROM sensei_source_unit u JOIN sensei_source s ON s.id = u.source_id
+      WHERE s.kind = 'textbook' AND u.kind = 'page'
+        AND to_tsvector('english', u.text) @@ websearch_to_tsquery('english', $1)
+      ORDER BY rank DESC LIMIT $2`,
+    [query, limit],
+  );
+  return rows.map((r) => ({
+    sourceId: r.source_id as string,
+    book: r.title as string,
+    page: r.page_no as number,
+    snippet: String(r.snippet).replace(/<<|>>/g, '').replace(/\s+/g, ' ').trim(),
+    text: String(r.text).slice(0, 2500),
+  }));
+}
+
+export async function listTextbooks(db: Db) {
+  const { rows } = await db.query<{ id: string; title: string; pages: string; created_at: Date }>(
+    `SELECT s.id, s.title, s.created_at, (SELECT count(*) FROM sensei_source_unit u WHERE u.source_id = s.id) AS pages
+       FROM sensei_source s WHERE s.kind = 'textbook' ORDER BY s.title`,
+  );
+  return rows.map((r) => ({ id: r.id, title: r.title, pages: Number(r.pages) }));
+}
+
+/** How far class sessions have moved through a deck: union of the sessions' slide ranges. */
+export async function deckCoverage(db: Db, lectureId: string) {
+  const { rows } = await db.query<{ deck_id: string; deck_title: string; pages: string; covered: number[] | null }>(
+    `SELECT d.id AS deck_id, dl.title AS deck_title,
+            (SELECT count(*) FROM sensei_source_unit u WHERE u.source_id = d.id AND u.kind = 'page') AS pages,
+            (SELECT array_agg(DISTINCT g) FROM sensei_lecture_source ls2 JOIN sensei_lecture s2 ON s2.id = ls2.lecture_id,
+                    generate_series(s2.slide_from, s2.slide_to) g
+              WHERE ls2.source_id = d.id AND s2.kind = 'session' AND s2.slide_from IS NOT NULL) AS covered
+       FROM sensei_lecture_source ls
+       JOIN sensei_source d ON d.id = ls.source_id AND d.kind = 'slides'
+       LEFT JOIN sensei_lecture_source dls ON dls.source_id = d.id
+       LEFT JOIN sensei_lecture dl ON dl.id = dls.lecture_id AND dl.kind = 'deck'
+      WHERE ls.lecture_id = $1 AND dl.id IS NOT NULL
+      LIMIT 1`,
+    [lectureId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return { deckTitle: r.deck_title, pages: Number(r.pages), covered: (r.covered ?? []).length };
 }
 
 export interface GlossaryEntry extends ConceptChip {

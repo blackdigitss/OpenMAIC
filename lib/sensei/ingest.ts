@@ -88,7 +88,7 @@ export interface IngestInput {
   path: string;
   kind?: SourceKind;
   course: { code: string; title?: string };
-  lecture: { date: string; title: string; slideFrom?: number | null; slideTo?: number | null };
+  lecture: { date: string; title: string; slideFrom?: number | null; slideTo?: number | null; kind?: 'session' | 'deck' };
   /** Attach to this existing lecture instead of finding/creating one by (course, date, title). */
   lectureId?: string;
 }
@@ -99,6 +99,28 @@ export interface IngestResult {
   kind: SourceKind;
   duplicate: boolean;
   units: number;
+}
+
+/**
+ * A textbook or handbook: stored and indexed page by page for full-text search.
+ * No model calls — it is consulted on demand, so a 1,000-page book costs nothing to add.
+ */
+export async function ingestReference(db: Db, path: string, config = senseiConfig()): Promise<{ sourceId: string; pages: number; duplicate: boolean }> {
+  const data = await readFile(path);
+  const hash = sha256(data);
+  const storedPath = join(config.libraryDir, `${hash}${extname(path).toLowerCase()}`);
+  await mkdir(config.libraryDir, { recursive: true });
+  if (!(await stat(storedPath).then(() => true, () => false))) await copyFile(path, storedPath);
+  const title = basename(path, extname(path)).replace(/[_-]+/g, ' ').replace(/^\d+\s+/, '').trim();
+  const source = await registerSource(db, {
+    sha256: hash, kind: 'textbook', courseId: null, title, originalName: basename(path), storedPath, metadata: { bytes: data.length },
+  });
+  let pages = (await loadUnits(db, source.id)).length;
+  if (pages === 0) {
+    const parsed = (await pdfPages(data)).map((text, i) => ({ kind: 'page' as const, ordinal: i + 1, pageNo: i + 1, text }));
+    pages = (await insertUnits(db, source.id, parsed)).length;
+  }
+  return { sourceId: source.id, pages, duplicate: !source.created };
 }
 
 export async function ingestFile(db: Db, input: IngestInput, config = senseiConfig()): Promise<IngestResult> {

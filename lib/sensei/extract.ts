@@ -97,7 +97,12 @@ Rules:
 - Relations: only those the material supports (prerequisite_of, causes, affects, measured_by, applied_in, extends, contradicts, confused_with, related_to).
 - Patient identifiers must never appear in statements; write [PATIENT].`;
 
-export function buildExtractionPrompt(window: ExtractionWindow, candidates: WindowCandidate[], lectureLabel: string): string {
+export function buildExtractionPrompt(
+  window: ExtractionWindow,
+  candidates: WindowCandidate[],
+  lectureLabel: string,
+  slideContext: SourceUnit[] = [],
+): string {
   const unitLines = [...window.unitRefs.entries()].map(([ref, u]) => {
     const loc =
       u.kind === 'page'
@@ -114,8 +119,12 @@ export function buildExtractionPrompt(window: ExtractionWindow, candidates: Wind
         })
         .join('\n')
     : '(none yet)';
+  const slides = slideContext.length
+    ? `\n<slides_context>\n${slideContext.map((p) => `[slide ${p.pageNo}] ${p.text}`).join('\n')}\n</slides_context>\n` +
+      `The slides above were already extracted on their own. Use them to understand what the instructor is discussing. Cite ONLY units from <material>. When the instructor restates a point that already exists as a known record, link it (existing_record_relation "duplicate" or "extends") rather than writing it anew; put your effort into what the instructor ADDS: explanations, examples, emphasis, stories, connections, corrections.\n`
+    : '';
   return `Lecture: ${lectureLabel}
-
+${slides}
 <known_concepts>
 ${known}
 </known_concepts>

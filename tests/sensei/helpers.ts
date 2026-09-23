@@ -66,7 +66,7 @@ export function rec(partial: Partial<Rec> & Pick<Rec, 'concept_name' | 'statemen
 
 /** Find the ref ("C3" / "R2") the prompt assigned to a concept name or record statement. */
 export function refFor(prompt: string, text: string): string {
-  const line = prompt.split('\n').find((l) => l.includes(text));
+  const line = prompt.split('\n').find((l) => l.includes(text) && /\b[CR]\d+:/.test(l));
   const m = line && /\b([CR]\d+):/.exec(line);
   if (!m) throw new Error(`No ref for "${text}" in prompt`);
   return m[1];

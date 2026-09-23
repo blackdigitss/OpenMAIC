@@ -261,6 +261,39 @@ CREATE INDEX sensei_review_log_card ON sensei_review_log (card_id, reviewed_at);
 ALTER TABLE sensei_knowledge_record ADD COLUMN reviewed_at TIMESTAMPTZ;
 `,
   },
+  {
+    id: '0003_decks_sessions_textbooks',
+    sql: `
+-- A lecture is either a class session (a recording) or a slide deck (the week's backbone).
+ALTER TABLE sensei_lecture ADD COLUMN kind TEXT NOT NULL DEFAULT 'session' CHECK (kind IN ('session','deck'));
+
+-- Textbook/handbook pages are searched on demand with full-text search (no model calls).
+CREATE INDEX sensei_unit_page_fts ON sensei_source_unit USING gin (to_tsvector('english', text)) WHERE kind = 'page';
+
+-- Recurrence split by where a concept appeared: class sessions vs slide decks.
+CREATE OR REPLACE VIEW sensei_concept_signals AS
+SELECT
+  c.id AS concept_id,
+  count(DISTINCT e.lecture_id) AS lecture_count,
+  count(DISTINCT l.course_id) AS course_count,
+  count(DISTINCT r.id) FILTER (WHERE r.type IN ('emphasis','exam_hint')) AS emphasis_count,
+  min(l.lecture_date) AS first_seen,
+  max(l.lecture_date) AS last_seen,
+  (SELECT count(*) FROM sensei_concept_relation cr
+    WHERE (cr.from_concept = c.id OR cr.to_concept = c.id)
+      AND cr.type <> 'possible_duplicate') AS relation_degree,
+  (SELECT count(*) FROM sensei_concept_relation cr
+    WHERE cr.from_concept = c.id AND cr.type = 'prerequisite_of') AS unlocks_count,
+  c.clinical_safety,
+  count(DISTINCT e.lecture_id) FILTER (WHERE l.kind = 'session') AS session_count,
+  count(DISTINCT e.lecture_id) FILTER (WHERE l.kind = 'deck') AS deck_count
+FROM sensei_concept c
+LEFT JOIN sensei_knowledge_record r ON r.concept_id = c.id AND r.superseded_at IS NULL
+LEFT JOIN sensei_record_evidence e ON e.record_id = r.id AND e.superseded_at IS NULL
+LEFT JOIN sensei_lecture l ON l.id = e.lecture_id
+GROUP BY c.id;
+`,
+  },
 ];
 
 export interface MigrationQueryable {

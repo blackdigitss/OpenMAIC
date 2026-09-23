@@ -77,9 +77,10 @@ function ConceptContent({ c }: { c: ConceptDetail }) {
         <h1 className="t-title1">{c.name}</h1>
         {c.aliases.length > 0 && <div className="t-sub c2" style={{ marginTop: 2 }}>Also called {c.aliases.join(', ')}</div>}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-          <span className="s-pill tint">
-            {c.signals.lectures === 1 ? 'Taught in 1 class' : `Taught in ${c.signals.lectures} classes`}
-          </span>
+          {c.signals.sessions > 0 && (
+            <span className="s-pill tint">{c.signals.sessions === 1 ? 'Came up in 1 class' : `Came up in ${c.signals.sessions} classes`}</span>
+          )}
+          {c.signals.decks > 0 && <span className="s-pill tint">{c.signals.decks === 1 ? 'On the slides' : `On ${c.signals.decks} decks`}</span>}
           {c.signals.emphasis > 0 && <span className="s-pill exam">Stressed {c.signals.emphasis}×</span>}
           {c.signals.courses > 1 && <span className="s-pill muted">{c.signals.courses} courses</span>}
           {c.signals.unlocks > 0 && <span className="s-pill muted">Unlocks {c.signals.unlocks}</span>}
@@ -118,6 +119,23 @@ function ConceptContent({ c }: { c: ConceptDetail }) {
           <div className="s-list">
             {stories.map((r) => (
               <RecordRow key={r.id} r={r} conceptId={c.id} onPlay={play} />
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {c.textbook.length > 0 && (
+        <Section title="In your textbook" footer="The program’s reference text, for more depth. Found by search, not summarized.">
+          <div className="s-list">
+            {c.textbook.map((p) => (
+              <div key={`${p.sourceId}-${p.page}`} className="s-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                <span className="t-foot" style={{ color: 'var(--indigo)', fontWeight: 600 }}>
+                  {p.book}, page {p.page}
+                </span>
+                <span className="t-callout">
+                  <TermText text={`…${p.snippet}…`} exclude={c.id} />
+                </span>
+              </div>
             ))}
           </div>
         </Section>
@@ -365,9 +383,22 @@ function Ask({ conceptId, name }: { conceptId: string; name: string }) {
               )}
             </div>
           )}
+          {a.reference && (
+            <div className="s-card">
+              <div className="s-answer-label" style={{ color: 'var(--indigo)' }}>From your textbook</div>
+              <div className="s-prose" style={{ fontSize: 16 }}>
+                <TermText text={a.reference.replace(/\s*\[T\d+(?:,\s*T\d+)*\]/g, '')} />
+              </div>
+              {a.textbook.length > 0 && (
+                <div className="t-foot c2" style={{ marginTop: 8 }}>
+                  {a.textbook.map((t) => `${t.book}, p. ${t.page}`).join('; ')}
+                </div>
+              )}
+            </div>
+          )}
           {a.added && (
             <div className="s-card">
-              <div className="s-answer-label" style={{ color: 'var(--indigo)' }}>Sensei’s explanation (not from your lectures)</div>
+              <div className="s-answer-label c2">Sensei’s explanation (not from your course)</div>
               <div className="s-prose" style={{ fontSize: 16 }}>
                 <TermText text={a.added} />
               </div>

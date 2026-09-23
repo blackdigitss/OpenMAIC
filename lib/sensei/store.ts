@@ -28,17 +28,18 @@ export interface LectureInput {
   title: string;
   slideFrom?: number | null;
   slideTo?: number | null;
+  kind?: 'session' | 'deck';
 }
 
 export async function ensureLecture(db: Db, input: LectureInput): Promise<string> {
   const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO sensei_lecture (course_id, lecture_date, title, slide_from, slide_to)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO sensei_lecture (course_id, lecture_date, title, slide_from, slide_to, kind)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (course_id, lecture_date, title) DO UPDATE
        SET slide_from = COALESCE(EXCLUDED.slide_from, sensei_lecture.slide_from),
            slide_to = COALESCE(EXCLUDED.slide_to, sensei_lecture.slide_to)
      RETURNING id`,
-    [input.courseId, input.date, input.title, input.slideFrom ?? null, input.slideTo ?? null],
+    [input.courseId, input.date, input.title, input.slideFrom ?? null, input.slideTo ?? null, input.kind ?? 'session'],
   );
   return rows[0].id;
 }

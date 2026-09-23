@@ -5,7 +5,7 @@
  * documented `requirement` + `pdfContent.text` inputs (DECISIONS D19).
  */
 import type { Db } from './db/types';
-import { lectureDigest } from './queries';
+import { lectureDigest, textbookPassages } from './queries';
 
 export interface LessonBrief {
   requirement: string;
@@ -17,12 +17,25 @@ export async function buildLessonBrief(db: Db, lectureId: string): Promise<Lesso
   const digest = await lectureDigest(db, lectureId);
   if (!digest) return null;
   const todays = [...digest.newConcepts, ...digest.reinforced];
-  const ids = todays.map((c) => c.id);
+  // The slides are the foundation: every concept on the slides this class covered belongs in
+  // tonight's lesson, whether or not the professor said it out loud.
+  const { rows: onSlides } = await db.query<{ concept_id: string }>(
+    `SELECT DISTINCT r.concept_id
+       FROM sensei_lecture s
+       JOIN sensei_lecture_source ls ON ls.lecture_id = s.id
+       JOIN sensei_source d ON d.id = ls.source_id AND d.kind = 'slides'
+       JOIN sensei_source_unit u ON u.source_id = d.id AND u.kind = 'page'
+       JOIN sensei_record_evidence e ON e.unit_id = u.id AND e.superseded_at IS NULL
+       JOIN sensei_knowledge_record r ON r.id = e.record_id AND r.superseded_at IS NULL AND r.verification <> 'rejected'
+      WHERE s.id = $1 AND s.slide_from IS NOT NULL AND u.page_no BETWEEN s.slide_from AND s.slide_to`,
+    [lectureId],
+  );
+  const ids = [...new Set([...todays.map((c) => c.id), ...onSlides.map((r) => r.concept_id)])];
   if (ids.length === 0) return null;
 
   const { rows: recs } = await db.query<Record<string, unknown>>(
     `SELECT c.id AS concept_id, c.canonical_name, r.type, r.statement, r.verification,
-            l.title, l.lecture_date, (e.lecture_id = $2) AS today
+            l.title, l.lecture_date, l.kind AS lecture_kind, (e.lecture_id = $2) AS today
        FROM sensei_knowledge_record r
        JOIN sensei_concept c ON c.id = r.concept_id
        JOIN sensei_record_evidence e ON e.record_id = r.id AND e.superseded_at IS NULL
@@ -55,7 +68,7 @@ export async function buildLessonBrief(db: Db, lectureId: string): Promise<Lesso
       current = r.canonical_name as string;
       lines.push(`\n## ${current}`);
     }
-    const when = r.today ? 'today' : `earlier: "${r.title}"`;
+    const when = r.lecture_kind === 'deck' ? `slides: "${r.title}"` : r.today ? 'said in class today' : `said in an earlier class: "${r.title}"`;
     const caution = r.verification === 'flagged' ? ' [UNCONFIRMED — do not teach as fact]' : '';
     lines.push(`- (${r.type}, ${when}) ${r.statement}${caution}`);
   }
@@ -63,14 +76,25 @@ export async function buildLessonBrief(db: Db, lectureId: string): Promise<Lesso
     lines.push('\n## Prerequisites to recap briefly');
     for (const p of prereqs) lines.push(`- ${p.canonical_name} (needed for ${p.for_name})${p.short_definition ? `: ${p.short_definition}` : ''}`);
   }
-  const notes = `COURSE NOTES — facts the instructor actually taught, extracted from lecture recordings and slides.\n${lines.join('\n')}`.slice(0, 60_000);
+  // Textbook: the ground-truth reference, a page or so for each new concept (bounded).
+  const refLines: string[] = [];
+  let refBudget = 9_000;
+  for (const c of digest.newConcepts.slice(0, 6)) {
+    const [p] = await textbookPassages(db, [c.name], 1);
+    if (!p || refBudget <= 0) continue;
+    const text = p.text.slice(0, Math.min(1500, refBudget));
+    refBudget -= text.length;
+    refLines.push(`- ${c.name} — ${p.book}, p. ${p.page}: ${text}`);
+  }
+  const reference = refLines.length ? `\n\nTEXTBOOK REFERENCE — the program's ground truth; use to fill gaps and deepen explanations, cite as "(textbook p. N)":\n${refLines.join('\n')}` : '';
+  const notes = `COURSE NOTES — the slides are the foundation; "said in class" items are the professor's spoken additions (explanations, emphasis, stories).\n${lines.join('\n')}${reference}`.slice(0, 70_000);
 
   const d = digest.lecture;
   const emphasis = digest.emphasis.map((e) => `"${e.statement}"`).slice(0, 8);
   const earlier = digest.reinforced.filter((c) => c.firstSeen).slice(0, 8).map((c) => `${c.name} (first taught ${c.firstSeen})`);
   const requirement = [
     `Evening review lesson for a respiratory therapy student, about 15 minutes, on today's ${d.courseCode} lecture "${d.title}" (${d.date}).`,
-    `Teach from the COURSE NOTES provided: they are what the instructor actually said. Do not contradict them; if you add explanation beyond the notes, say so. Never present items marked UNCONFIRMED as fact.`,
+    `Build the lesson on the slide content in the COURSE NOTES, enriched with what the professor added in class (his explanations, emphasis and stories). Do not contradict the notes; if you add explanation beyond them, say so. Never present items marked UNCONFIRMED as fact. Present stories as stories, not rules.`,
     digest.newConcepts.length ? `New today: ${digest.newConcepts.map((c) => c.name).slice(0, 12).join(', ')}.` : '',
     earlier.length ? `Connect explicitly to earlier lectures: ${earlier.join('; ')}.` : '',
     emphasis.length ? `The instructor emphasized (likely exam material): ${emphasis.join(' ')}` : '',

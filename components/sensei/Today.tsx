@@ -84,7 +84,22 @@ export function Today() {
                   <span className="t-foot c2">{relDay(d.lecture.date)}</span>
                 </div>
                 <h2 className="t-title2" style={{ marginTop: 6 }}>{d.lecture.title}</h2>
+                {d.lecture.kind === 'session' && d.lecture.slideFrom != null && (
+                  <div className="t-foot c2" style={{ marginTop: 2 }}>
+                    Slides {d.lecture.slideFrom}–{d.lecture.slideTo}
+                  </div>
+                )}
                 <LectureSummary lectureId={d.lecture.id} />
+                {data.coverage && data.coverage.pages > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div className="s-progress">
+                      <div style={{ width: `${Math.min(100, (data.coverage.covered / data.coverage.pages) * 100)}%` }} />
+                    </div>
+                    <div className="t-foot c2" style={{ marginTop: 6 }}>
+                      {data.coverage.covered} of {data.coverage.pages} slides covered in class so far: {data.coverage.deckTitle}
+                    </div>
+                  </div>
+                )}
                 <div className="s-actions">
                   {d.lecture.classroomUrl ? (
                     <button className="s-btn" onClick={() => openSheet({ kind: 'lesson', url: d.lecture.classroomUrl!, title: d.lecture.title })}>

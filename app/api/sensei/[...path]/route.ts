@@ -18,6 +18,8 @@ import { dueCards, reviewCard } from '@/lib/sensei/learn';
 import { geminiLlm, MissingApiKeyError } from '@/lib/sensei/llm';
 import {
   conceptDetail,
+  deckCoverage,
+  listTextbooks,
   flaggedForReview,
   glossary,
   lectureDigest,
@@ -55,7 +57,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     switch (head) {
       case 'today': {
         const lectures = await listLectures(db, 12);
-        const latest = lectures.find((l) => l.status === 'ready');
+        // Tonight's focus is the latest class session; a deck alone shows until a session exists.
+        const latest = lectures.find((l) => l.status === 'ready' && l.kind === 'session') ?? lectures.find((l) => l.status === 'ready');
         const { rows: jobs } = await db.query<Record<string, unknown>>(
           `SELECT j.id, j.status, j.step, j.progress, j.detail, j.error, j.input->>'files' AS files, j.created_at, l.title
              FROM sensei_job j LEFT JOIN sensei_lecture l ON l.id = j.lecture_id
@@ -73,6 +76,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return ok({
           lectures,
           digest: latest ? await lectureDigest(db, latest.id) : null,
+          coverage: latest?.kind === 'session' ? await deckCoverage(db, latest.id) : null,
           flagged: await flaggedForReview(db, 3),
           stats: await stats(db),
           jobs: jobs.map((j) => ({
@@ -118,6 +122,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       }
       case 'courses':
         return ok(await courses());
+      case 'textbooks':
+        return ok(await listTextbooks(db));
       case 'audio':
         return streamAudio(req, id);
       default:
@@ -141,18 +147,22 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const dir = join(config.home, 'uploads', uploadId);
         await mkdir(dir, { recursive: true });
         if (action === 'done') {
-          const body = (await req.json()) as { names: string[]; courseCode?: string; lastModified?: number };
+          const body = (await req.json()) as { names: string[]; roles?: Record<string, string>; courseCode?: string; lastModified?: number };
           const files: string[] = [];
+          const roles: Record<string, string> = {};
           for (const name of body.names) {
             const safe = basename(name).replace(/[^\w.\- ]+/g, '_');
             const part = join(dir, `${safe}.part`);
             const final = join(dir, safe);
             await rename(part, final);
             files.push(final);
+            const role = body.roles?.[name];
+            if (role === 'slides' || role === 'textbook' || role === 'recording') roles[final] = role;
           }
           const audio = files.find((f) => !/\.(pdf|txt|vtt|srt)$/i.test(f));
           const recordedAt = (audio && (await recordedAtFromFile(audio))) || body.lastModified || Date.now();
-          const job = await enqueueLecture(db, { files, courseCode: body.courseCode || null, recordedAt });
+          const onlyBooks = files.every((f) => roles[f] === 'textbook');
+          const job = await enqueueLecture(db, { files, roles, courseCode: body.courseCode || null, recordedAt, bookOnly: onlyBooks });
           return ok(job);
         }
         const name = basename(req.nextUrl.searchParams.get('name') ?? 'file').replace(/[^\w.\- ]+/g, '_');

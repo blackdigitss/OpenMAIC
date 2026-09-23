@@ -94,6 +94,7 @@ launchctl kickstart -k "gui/$UID/com.sensei.worker"
 git update-ref refs/heads/sensei HEAD "$base" || log "sensei branch moved during the update; left unchanged"
 # Keep the fork's main a clean mirror of upstream (the established weekly habit).
 git push -q origin upstream/main:main 2>/dev/null || log "fork push skipped"
+git push -q origin sensei 2>/dev/null || log "sensei branch push skipped"
 
 changes=$(git log --oneline "$(git rev-parse HEAD^1)..upstream/main" 2>/dev/null | wc -l | tr -d ' ')
 write_status ok "Updated with $changes OpenMAIC changes"

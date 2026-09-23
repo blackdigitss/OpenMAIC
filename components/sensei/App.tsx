@@ -1,6 +1,7 @@
 'use client';
 
 import { AnimatePresence } from 'motion/react';
+import { useEffect } from 'react';
 
 import { ConceptSheetBody } from './ConceptSheet';
 import { LibraryIcon, ReviewIcon, TodayIcon } from './icons';
@@ -22,7 +23,35 @@ export function SenseiApp() {
   );
 }
 
+/** Renew the access cookie whenever the app comes to the foreground (at most every 6 hours). */
+function useRememberDevice() {
+  useEffect(() => {
+    const renew = () => {
+      if (document.visibilityState !== 'visible') return;
+      let last = 0;
+      try {
+        last = Number(localStorage.getItem('sensei.renewedAt') ?? 0);
+      } catch {
+        /* private mode */
+      }
+      if (Date.now() - last < 6 * 3600_000) return;
+      void fetch('/api/access-code/sensei-renew', { method: 'POST' }).then((r) => {
+        if (!r.ok) return;
+        try {
+          localStorage.setItem('sensei.renewedAt', String(Date.now()));
+        } catch {
+          /* ignore */
+        }
+      });
+    };
+    renew();
+    document.addEventListener('visibilitychange', renew);
+    return () => document.removeEventListener('visibilitychange', renew);
+  }, []);
+}
+
 function Shell() {
+  useRememberDevice();
   const { tab, setTab, routes, sheets, popSheet, closeSheets, reviewing, track } = useSensei();
   const route = routes[tab][routes[tab].length - 1];
   const top = sheets[sheets.length - 1];

@@ -80,7 +80,17 @@ async function main() {
       await mkdir(dir, { recursive: true });
       const file = join(dir, `sensei-${new Date().toISOString().slice(0, 10)}.dump`);
       await promisify(execFile)('pg_dump', ['-Fc', '-f', file, config.databaseUrl]);
-      console.log(`Backed up to ${file}`);
+      // Keep 14 local dumps.
+      const { readdir, rm, copyFile } = await import('fs/promises');
+      const dumps = (await readdir(dir)).filter((f) => f.endsWith('.dump')).sort();
+      for (const old of dumps.slice(0, -14)) await rm(join(dir, old));
+      // Off the Mac: iCloud Drive keeps the latest dump and a mirror of every recording/slide/textbook.
+      const cloud = process.env.SENSEI_BACKUP_DIR ?? join(process.env.HOME ?? '', 'Library/Mobile Documents/com~apple~CloudDocs/Sensei Backups');
+      await mkdir(join(cloud, 'database'), { recursive: true });
+      await copyFile(file, join(cloud, 'database', 'sensei-latest.dump'));
+      await copyFile(file, join(cloud, 'database', `sensei-${new Date().toISOString().slice(0, 7)}.dump`)); // one per month
+      await promisify(execFile)('rsync', ['-a', '--ignore-existing', `${config.libraryDir}/`, join(cloud, 'files')]);
+      console.log(`Backed up to ${file} and ${cloud}`);
       break;
     }
     default:

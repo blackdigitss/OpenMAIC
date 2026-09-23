@@ -2,12 +2,13 @@
 # Put Sensei on your own domain through a Cloudflare Tunnel, so the iPhone reaches the Mac
 # from anywhere without opening router ports.
 # Usage: setup-tunnel.sh sensei.example.com
-# Needs: ACCESS_CODE set in sensei.env (refuses otherwise: the site would be public).
+# Uses ACCESS_CODE from sensei.env (generates a passphrase if none is set). A short numeric
+# code should be paired with the Cloudflare rate-limit rule on /api/access-code/verify.
 source "${0:A:h}/common.sh"
 host="$1"
 [ -z "$host" ] && { echo "usage: setup-tunnel.sh <hostname, e.g. sensei.yourdomain.com>"; exit 2; }
 code=$(envget ACCESS_CODE)
-if [ ${#code} -lt 20 ]; then
+if [ ${#code} -lt 6 ]; then
   # Five random dictionary words: typed once per device, far too long to guess.
   code=$(LC_ALL=C grep -E '^[a-z]{4,7}$' /usr/share/dict/words | sort -R | head -5 | paste -sd- -)
   sed -i '' '/^#* *ACCESS_CODE=/d' "$ENV_FILE"

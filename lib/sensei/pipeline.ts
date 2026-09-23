@@ -51,7 +51,10 @@ export function quoteWindow(unitText: string, quote: string): string {
   return unitText.slice(Math.max(0, at - 80), Math.min(unitText.length, at + quote.length + 80));
 }
 
-export async function lectureUnits(db: Db, lectureId: string): Promise<{ label: string; units: SourceUnit[] }> {
+export async function lectureUnits(
+  db: Db,
+  lectureId: string,
+): Promise<{ label: string; units: SourceUnit[]; slideContext: SourceUnit[] }> {
   const { rows: lec } = await db.query<Record<string, unknown>>(
     `SELECT l.*, c.code FROM sensei_lecture l JOIN sensei_course c ON c.id = l.course_id WHERE l.id = $1`,
     [lectureId],
@@ -68,16 +71,25 @@ export async function lectureUnits(db: Db, lectureId: string): Promise<{ label: 
   );
   const from = (l.slide_from as number | null) ?? null;
   const to = (l.slide_to as number | null) ?? null;
-  const units: SourceUnit[] = [];
+  const all: SourceUnit[] = [];
   for (const { source_id } of sources) {
     for (const u of await loadUnits(db, source_id)) {
       // A multi-week deck contributes only this lecture's page range.
       if (u.kind === 'page' && from != null && to != null && (u.pageNo! < from || u.pageNo! > to)) continue;
-      units.push(u);
+      all.push(u);
     }
   }
   const date = l.lecture_date instanceof Date ? l.lecture_date.toISOString().slice(0, 10) : String(l.lecture_date);
-  return { label: `${l.code} — ${l.title} (${date})`, units };
+  const label = `${l.code} — ${l.title} (${date})`;
+  const segments = all.filter((u) => u.kind === 'segment');
+  // A class session's evidence is what was said; the deck was already extracted on its own,
+  // so its covered slides are context here, never counted again (DECISIONS: decks vs sessions).
+  if (l.kind === 'session' && segments.length > 0) {
+    let budget = 14_000;
+    const slideContext = all.filter((u) => u.kind === 'page' && (budget -= u.text.length) > 0);
+    return { label, units: segments, slideContext };
+  }
+  return { label, units: all, slideContext: [] };
 }
 
 /** Concepts already in the core whose name or alias occurs in the window text. */
@@ -131,7 +143,7 @@ export async function processLecture(
   lectureId: string,
   opts: ProcessOptions = {},
 ): Promise<LectureRunReport> {
-  const { label, units } = await lectureUnits(db, lectureId);
+  const { label, units, slideContext } = await lectureUnits(db, lectureId);
   const windows = buildWindows(units);
   const runId = await startRun(db, lectureId, EXTRACT_PROMPT_VERSION, llm.modelName('fast'));
   const report: LectureRunReport = {
@@ -145,7 +157,7 @@ export async function processLecture(
       const extraction = await llm.call({
         schema: ExtractionSchema,
         system: EXTRACT_SYSTEM,
-        prompt: buildExtractionPrompt(window, candidates, label),
+        prompt: buildExtractionPrompt(window, candidates, label, slideContext),
         tier: 'fast',
       });
       await applyExtraction(db, { lectureId, runId, window, candidates, extraction, report });

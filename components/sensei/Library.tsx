@@ -16,6 +16,7 @@ export function Library() {
   const { data: all } = useApi<GlossaryEntry[]>('glossary');
   const { data: found } = useApi<GlossaryEntry[]>(query ? `glossary?q=${encodeURIComponent(query)}` : null);
   const { data: lectures } = useApi<LectureSummary[]>(mode === 'lectures' ? 'lectures' : null);
+  const { data: books } = useApi<{ id: string; title: string; pages: number }[]>(mode === 'lectures' ? 'textbooks' : null);
 
   const sections = useMemo(() => {
     const map = new Map<string, GlossaryEntry[]>();
@@ -108,13 +109,23 @@ export function Library() {
                 <Row
                   key={l.id}
                   title={l.title}
-                  sub={`${fmtDate(l.date, { weekday: 'short', month: 'short', day: 'numeric' })}${l.conceptCount ? `, ${l.conceptCount} concepts` : ''}${l.status === 'failed' ? ', needs attention' : l.status === 'processing' ? ', processing' : ''}`}
+                  sub={`${l.kind === 'deck' ? 'Slides, added ' : ''}${fmtDate(l.date, { weekday: 'short', month: 'short', day: 'numeric' })}${l.kind === 'session' && l.slideFrom != null ? `, slides ${l.slideFrom}–${l.slideTo}` : ''}${l.conceptCount ? `, ${l.conceptCount} concepts` : ''}${l.status === 'failed' ? ', needs attention' : l.status === 'processing' ? ', processing' : ''}`}
+                  trailing={l.kind === 'deck' ? <span className="s-pill tint">Slides</span> : undefined}
                   onClick={() => push({ name: 'lecture', id: l.id })}
                 />
               ))}
             </div>
           </Section>
         ))
+      )}
+      {mode === 'lectures' && !query && books && books.length > 0 && (
+        <Section title="Textbooks" footer="Searched automatically when a concept needs more depth.">
+          <div className="s-list">
+            {books.map((b) => (
+              <Row key={b.id} title={b.title} sub={`${b.pages} pages`} chevron={false} />
+            ))}
+          </div>
+        </Section>
       )}
     </Screen>
   );

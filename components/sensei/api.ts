@@ -41,6 +41,7 @@ export interface TodayData {
   jobs: Job[];
   week: { date: string; concepts: number }[];
   courses: Course[];
+  coverage: { deckTitle: string; pages: number; covered: number } | null;
   hasKey: boolean;
   system: { workerAlive: boolean; workerSeen: boolean; update: { state: string; message: string; at: string } | null };
 }

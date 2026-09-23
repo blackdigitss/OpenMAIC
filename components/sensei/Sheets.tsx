@@ -51,16 +51,28 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
   const { toast } = useSensei();
   const { data: courses } = useApi<Course[]>('courses');
   const [files, setFiles] = useState<File[]>([]);
+  const [roles, setRoles] = useState<Map<File, 'recording' | 'slides' | 'textbook'>>(new Map());
   const [course, setCourse] = useState<string>('auto');
   const [sent, setSent] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const audioInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
+  const bookInput = useRef<HTMLInputElement>(null);
+  const onlyBooks = files.length > 0 && files.every((f) => roles.get(f) === 'textbook');
   const total = files.reduce((n, f) => n + f.size, 0);
   const hasSchedule = courses?.some((c) => c.schedule.length > 0);
 
-  const add = (list: FileList | null) => list && setFiles((f) => [...f, ...Array.from(list).filter((x) => !f.some((y) => y.name === x.name && y.size === x.size))]);
+  const add = (list: FileList | null, role: 'recording' | 'slides' | 'textbook') => {
+    if (!list) return;
+    const incoming = Array.from(list);
+    setFiles((f) => [...f, ...incoming.filter((x) => !f.some((y) => y.name === x.name && y.size === x.size))]);
+    setRoles((m) => {
+      const next = new Map(m);
+      for (const x of incoming) next.set(x, role);
+      return next;
+    });
+  };
 
   const submit = async () => {
     setBusy(true);
@@ -75,7 +87,12 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
       const audio = files.find((f) => !f.name.toLowerCase().endsWith('.pdf'));
       await api(`upload/${uploadId}/done`, {
         method: 'POST',
-        body: JSON.stringify({ names: files.map((f) => f.name), courseCode: course === 'auto' ? null : course, lastModified: audio?.lastModified }),
+        body: JSON.stringify({
+          names: files.map((f) => f.name),
+          roles: Object.fromEntries(files.map((f) => [f.name, roles.get(f) ?? 'recording'])),
+          courseCode: course === 'auto' ? null : course,
+          lastModified: audio?.lastModified,
+        }),
       });
       invalidate('today');
       toast('Added. Sensei is on it.');
@@ -99,32 +116,42 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <p className="t-sub c2" style={{ padding: '8px 20px 0' }}>
-        Add today’s recording, and the slides if your professor shared them. Sensei does the rest.
+        Add each class recording on its own. Add the week’s slides once, whenever you get them. Sensei links them up.
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '16px 16px 0' }}>
-        <button className="s-card" style={{ display: 'grid', justifyItems: 'center', gap: 8, padding: '20px 12px', margin: 0 }} onClick={() => audioInput.current?.click()}>
-          <MicIcon style={{ width: 30, height: 30, color: 'var(--pink)' }} />
-          <span className="t-headline">Recording</span>
-          <span className="t-foot c2">From Voice Memos or Files</span>
-        </button>
-        <button className="s-card" style={{ display: 'grid', justifyItems: 'center', gap: 8, padding: '20px 12px', margin: 0 }} onClick={() => pdfInput.current?.click()}>
-          <DocIcon style={{ width: 30, height: 30, color: 'var(--tint)' }} />
-          <span className="t-headline">Slides</span>
-          <span className="t-foot c2">PDF</span>
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '16px 16px 0' }}>
+        {(
+          [
+            { role: 'recording', label: 'Recording', sub: 'One class', Icon: MicIcon, color: 'var(--pink)', ref: audioInput },
+            { role: 'slides', label: 'Slides', sub: 'The week’s deck', Icon: DocIcon, color: 'var(--tint)', ref: pdfInput },
+            { role: 'textbook', label: 'Textbook', sub: 'Reference', Icon: DocIcon, color: 'var(--indigo)', ref: bookInput },
+          ] as const
+        ).map(({ role, label, sub, Icon, color, ref }) => (
+          <button key={role} className="s-card" style={{ display: 'grid', justifyItems: 'center', gap: 6, padding: '16px 6px', margin: 0 }} onClick={() => ref.current?.click()}>
+            <Icon style={{ width: 28, height: 28, color }} />
+            <span className="t-headline">{label}</span>
+            <span className="t-foot c2" style={{ textAlign: 'center' }}>{sub}</span>
+          </button>
+        ))}
       </div>
-      <input ref={audioInput} type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,video/mp4,.txt,.vtt" multiple hidden onChange={(e) => add(e.target.files)} />
-      <input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => add(e.target.files)} />
+      <input ref={audioInput} type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,video/mp4,.txt,.vtt" multiple hidden onChange={(e) => add(e.target.files, 'recording')} />
+      <input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => add(e.target.files, 'slides')} />
+      <input ref={bookInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => add(e.target.files, 'textbook')} />
 
       {files.length > 0 && (
         <Section title="Files">
           <div className="s-list">
             {files.map((f) => (
               <div key={f.name + f.size} className="s-row">
-                {f.name.toLowerCase().endsWith('.pdf') ? <DocIcon style={{ width: 22, height: 22, color: 'var(--tint)' }} /> : <MicIcon style={{ width: 22, height: 22, color: 'var(--pink)' }} />}
+                {roles.get(f) === 'recording' ? (
+                  <MicIcon style={{ width: 22, height: 22, color: 'var(--pink)' }} />
+                ) : (
+                  <DocIcon style={{ width: 22, height: 22, color: roles.get(f) === 'textbook' ? 'var(--indigo)' : 'var(--tint)' }} />
+                )}
                 <div className="s-row-main">
                   <div className="s-row-title clamp1">{f.name}</div>
-                  <div className="s-row-sub">{fmtSize(f.size)}</div>
+                  <div className="s-row-sub">
+                    {roles.get(f) === 'textbook' ? 'Textbook' : roles.get(f) === 'slides' ? 'Slides' : 'Recording'}, {fmtSize(f.size)}
+                  </div>
                 </div>
                 {!busy && (
                   <button aria-label={`Remove ${f.name}`} onClick={() => setFiles((all) => all.filter((x) => x !== f))} style={{ width: 26, height: 26 }}>
@@ -148,7 +175,7 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
         </Section>
       )}
 
-      <Section title="Class" footer={hasSchedule ? 'Automatic uses your class schedule and the time the recording was made.' : 'Add your class schedule to have this picked automatically.'}>
+      {!onlyBooks && <Section title="Class" footer={hasSchedule ? 'Automatic uses your class schedule and the time the recording was made.' : 'Add your class schedule to have this picked automatically.'}>
         <div className="s-chips wrap">
           {hasSchedule && (
             <button className="s-chip" aria-pressed={course === 'auto'} style={course === 'auto' ? { background: 'var(--tint)', color: 'var(--on-tint)' } : undefined} onClick={() => setCourse('auto')}>
@@ -167,7 +194,13 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
-      </Section>
+      </Section>}
+
+      {onlyBooks && (
+        <p className="s-foot" style={{ paddingTop: 16 }}>
+          Textbooks are indexed page by page and used whenever a concept needs more depth, with page numbers. Adding one costs nothing.
+        </p>
+      )}
 
       <Section title="Faster next time" footer="In Voice Memos, tap Share, then Save to Files, and choose the “Sensei Inbox” folder in iCloud Drive. Sensei picks it up automatically, even if this app is closed.">
         <span />
