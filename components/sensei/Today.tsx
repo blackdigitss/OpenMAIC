@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { api, fmtDate, fmtTime, humanNote, invalidate, relDay, useApi, type Job, type TodayData } from './api';
+import { api, fmtDate, fmtTime, humanNote, invalidate, reelUrl, relDay, useApi, type Job, type TodayData } from './api';
 import { PersonIcon, PlayIcon, PlusIcon, WaveGlyph } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -203,7 +203,7 @@ function KeyMoments({ reel }: { reel: TodayData['reel'] }) {
     <button
       className="s-btn gray"
       style={{ marginTop: 10 }}
-      onClick={() => play({ url: `/api/sensei/reels/${reel.id}`, startMs: 0, label: reel.title, chapters: reel.chapters })}
+      onClick={() => play({ url: reelUrl(reel), startMs: 0, label: reel.title, chapters: reel.chapters })}
     >
       <PlayIcon style={{ width: 14, height: 14 }} />
       Hear the key moments ({fmtTime(reel.durationMs ?? 0)})

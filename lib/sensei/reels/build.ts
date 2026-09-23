@@ -3,7 +3,7 @@
  * something, cut at word boundaries and stitched into one short audio track with
  * chapters. A clip whose words can't be found is dropped, never guessed.
  */
-import { mkdir, stat } from 'fs/promises';
+import { mkdir, stat, unlink } from 'fs/promises';
 import { join } from 'path';
 
 import { senseiConfig } from '../config';
@@ -105,7 +105,7 @@ export async function clipFor(db: Db, m: Moment, vocabulary: string[]) {
 export async function requestReel(db: Db, key: string, title: string): Promise<void> {
   await db.query(
     `INSERT INTO sensei_reel (key, title) VALUES ($1, $2)
-     ON CONFLICT (key) DO UPDATE SET title = EXCLUDED.title, status = CASE WHEN sensei_reel.status = 'building' THEN 'building' ELSE 'queued' END, updated_at = now()`,
+     ON CONFLICT (key) DO UPDATE SET title = EXCLUDED.title, status = CASE WHEN sensei_reel.status = 'building' AND sensei_reel.updated_at > now() - interval '30 minutes' THEN 'building' ELSE 'queued' END, updated_at = now()`,
     [key, title],
   );
 }
@@ -113,7 +113,10 @@ export async function requestReel(db: Db, key: string, title: string): Promise<v
 export async function buildNextReel(db: Db, log: (m: string) => void = () => undefined): Promise<boolean> {
   const { rows } = await db.query<{ id: string; key: string; clip_hash: string | null; file: string | null }>(
     `UPDATE sensei_reel SET status = 'building', updated_at = now()
-      WHERE id = (SELECT id FROM sensei_reel WHERE status = 'queued' ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+      WHERE id = (SELECT id FROM sensei_reel
+                   -- A build that has run for 30 minutes died with the worker (restart, update, reboot): take it back.
+                   WHERE status = 'queued' OR (status = 'building' AND updated_at < now() - interval '30 minutes')
+                   ORDER BY updated_at LIMIT 1 FOR UPDATE SKIP LOCKED)
       RETURNING id, key, clip_hash, file`,
   );
   const reel = rows[0];
@@ -160,6 +163,7 @@ export async function buildNextReel(db: Db, log: (m: string) => void = () => und
       `UPDATE sensei_reel SET status = 'ready', file = $2, duration_ms = $3, chapters = $4, clip_hash = $5, total = $6, dropped = $7, error = NULL, updated_at = now() WHERE id = $1`,
       [reel.id, file, durationMs, JSON.stringify(chapters), hash, moments.length, dropped],
     );
+    if (reel.file && reel.file !== file) await unlink(reel.file).catch(() => undefined);
     log(`reel ${reel.key}: ${clips.length} clips, ${Math.round(durationMs / 1000)} s`);
   } catch (e) {
     await db.query(`UPDATE sensei_reel SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`, [reel.id, (e as Error).message]);

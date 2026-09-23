@@ -84,8 +84,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           coverage: latest?.kind === 'session' ? await deckCoverage(db, latest.id) : null,
           reel: latest
             ? await db
-                .query<Record<string, unknown>>(`SELECT id, title, status, duration_ms, chapters FROM sensei_reel WHERE key = $1`, [`lecture:${latest.id}`])
-                .then((r) => (r.rows[0] ? { id: r.rows[0].id, title: r.rows[0].title, status: r.rows[0].status, durationMs: r.rows[0].duration_ms, chapters: r.rows[0].chapters } : null))
+                .query<Record<string, unknown>>(`SELECT id, title, status, duration_ms, chapters, clip_hash FROM sensei_reel WHERE key = $1`, [`lecture:${latest.id}`])
+                .then((r) => (r.rows[0] ? { id: r.rows[0].id, title: r.rows[0].title, status: r.rows[0].status, durationMs: r.rows[0].duration_ms, chapters: r.rows[0].chapters, v: r.rows[0].clip_hash } : null))
             : null,
           flagged: await flaggedForReview(db, 3),
           stats: await stats(db),
@@ -179,9 +179,9 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           return streamFile(req, rows[0].file, 'audio/mp4');
         }
         const { rows } = await db.query<Record<string, unknown>>(
-          `SELECT id, key, title, status, duration_ms, chapters, total, dropped, updated_at FROM sensei_reel ORDER BY updated_at DESC LIMIT 50`,
+          `SELECT id, key, title, status, duration_ms, chapters, total, dropped, clip_hash, updated_at FROM sensei_reel ORDER BY updated_at DESC LIMIT 50`,
         );
-        return ok(rows.map((r) => ({ id: r.id, key: r.key, title: r.title, status: r.status, durationMs: r.duration_ms, chapters: r.chapters, total: r.total, dropped: r.dropped })));
+        return ok(rows.map((r) => ({ id: r.id, key: r.key, title: r.title, status: r.status, durationMs: r.duration_ms, chapters: r.chapters, total: r.total, dropped: r.dropped, v: r.clip_hash })));
       }
       default:
         return fail(404, 'Unknown endpoint');

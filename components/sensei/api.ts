@@ -47,7 +47,11 @@ export interface Reel {
   chapters: import('./store').PlayerChapter[];
   total?: number;
   dropped?: number;
+  /** Changes whenever the reel is rebuilt, so the phone never plays a cached old version. */
+  v?: string | null;
 }
+
+export const reelUrl = (r: Reel) => `/api/sensei/reels/${r.id}?v=${(r.v ?? '').slice(0, 12)}`;
 
 export interface Job {
   id: string;

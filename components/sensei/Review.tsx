@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { api, fmtTime, invalidate, useApi, type CalcItem, type Reel, type ReviewCard, type TodayData } from './api';
+import { api, fmtTime, invalidate, reelUrl, useApi, type CalcItem, type Reel, type ReviewCard, type TodayData } from './api';
 import { PlayIcon } from './icons';
 import { CalcProblem } from './Calc';
 import { CaseQuestion } from './Case';
@@ -146,7 +146,7 @@ function ListenSection({ data, reels, onRequest }: { data?: TodayData; reels?: R
                 !r ? 'Tap to make it' : r.status === 'ready' ? `${fmtTime(r.durationMs ?? 0)}, ${r.chapters.length} moments` : r.status === 'empty' ? 'Nothing stressed with audio yet' : r.status === 'failed' ? 'Couldn’t build it. Tap to retry.' : 'Cutting clips…'
               }
               trailing={ready ? <PlayIcon style={{ width: 14, height: 14, color: 'var(--tint)' }} /> : undefined}
-              onClick={() => (ready ? play({ url: `/api/sensei/reels/${r!.id}`, startMs: 0, label: r!.title, chapters: r!.chapters }) : request(o.key, o.title))}
+              onClick={() => (ready ? play({ url: reelUrl(r!), startMs: 0, label: r!.title, chapters: r!.chapters }) : request(o.key, o.title))}
             />
           );
         })}
