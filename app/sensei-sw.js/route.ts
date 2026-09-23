@@ -41,6 +41,8 @@ self.addEventListener('fetch', (event) => {
     try {
       const res = await fetch(req);
       if (res.ok && res.type === 'basic') cache.put(req, res.clone()).catch(() => {});
+      // The Mac asleep or restarting shows up as a 5xx from Cloudflare or the gate: use the saved copy.
+      if (res.status >= 500) return (await cache.match(req)) || (req.mode === 'navigate' && (await cache.match('/sensei'))) || res;
       return res;
     } catch (err) {
       const hit = await cache.match(req) || (req.mode === 'navigate' ? await cache.match('/sensei') : undefined);

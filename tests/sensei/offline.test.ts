@@ -29,3 +29,31 @@ describe('service worker', () => {
     expect(keepable(u('/'), get())).toBe(false);
   });
 });
+
+describe('queued ratings on the server', () => {
+  it('ignores a replay of the same rating and an older rating that arrives late', async () => {
+    const { testDb } = await import('./helpers');
+    const { reviewCard } = await import('@/lib/sensei/learn');
+    const { resolveConcept } = await import('@/lib/sensei/store');
+    const db = await testDb();
+    try {
+      const c = await resolveConcept(db, { name: 'Oxygen toxicity' });
+      const { rows } = await db.query<{ id: string }>(
+        `INSERT INTO sensei_card (concept_id, competency, content_key, front, back) VALUES ($1, 'recall', 'k', 'f', 'b') RETURNING id`,
+        [c.id],
+      );
+      const id = rows[0].id;
+      const t1 = new Date('2026-09-01T15:00:00Z');
+      await reviewCard(db, id, 3, t1);
+      const snap = async () => (await db.query('SELECT stability, reps, due FROM sensei_card WHERE id = $1', [id])).rows[0];
+      const after = await snap();
+      await reviewCard(db, id, 3, t1); // replay
+      await reviewCard(db, id, 1, new Date('2026-08-31T15:00:00Z')); // older, from another device
+      expect(await snap()).toEqual(after);
+      const { rows: logs } = await db.query('SELECT 1 FROM sensei_review_log WHERE card_id = $1', [id]);
+      expect(logs).toHaveLength(1);
+    } finally {
+      await db.close();
+    }
+  });
+});

@@ -167,10 +167,11 @@ export async function reviewCard(db: Db, cardId: string, rating: Rating, now = n
   const before = toMemory(rows[0]);
   const { activeWeights } = await import('./spacing');
   const next = schedule(before, rating, now, await activeWeights(db));
-  // Guard against a concurrent rating of the same card (double tap, retried POST).
+  // Guard against a concurrent rating of the same card (double tap), a replayed rating (retried or
+  // queued POST with the same time), and an older offline rating arriving after a newer one.
   const updated = await db.query(
     `UPDATE sensei_card SET due = $2, stability = $3, difficulty = $4, reps = $5, lapses = $6, state = $7, last_review = $8
-      WHERE id = $1 AND last_review IS NOT DISTINCT FROM $9 RETURNING id`,
+      WHERE id = $1 AND last_review IS NOT DISTINCT FROM $9 AND (last_review IS NULL OR last_review < $8) RETURNING id`,
     [cardId, next.due, next.stability, next.difficulty, next.reps, next.lapses, next.state, now, rows[0].last_review ?? null],
   );
   if (updated.rows.length === 0) return { due: next.due, intervalDays: next.intervalDays, remediated: [] };

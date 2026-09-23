@@ -7,8 +7,6 @@
  */
 import { useEffect, useSyncExternalStore } from 'react';
 
-import { api } from './api';
-
 const KEY = 'sensei.pendingRatings';
 
 interface PendingRating {
@@ -34,45 +32,76 @@ function writeQueue(q: PendingRating[]) {
   }
 }
 
-/** Save a rating now, or keep it for later if there's no connection. */
-export async function postRating(cardId: string, rating: 1 | 2 | 3 | 4): Promise<{ remediated?: string[]; queued?: boolean }> {
+type Sent =
+  | { outcome: 'done'; body: { remediated?: string[] } }
+  | { outcome: 'rejected' }
+  | { outcome: 'retry'; status: number | null };
+
+/** One attempt. Always carries the rating's own time, so a replay of the same rating is ignored by the server. */
+async function send(item: PendingRating): Promise<Sent> {
+  const res = await fetch('/api/sensei/review', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(item),
+  }).catch(() => null);
+  if (!res) return { outcome: 'retry', status: null };
+  if (res.ok)
+    return {
+      outcome: 'done',
+      body: (await res.json().catch(() => ({}))) as { remediated?: string[] },
+    };
+  // Only a rating the server refuses outright is final; an expired code (401), rate limit or a
+  // restarting/asleep Mac (5xx) keeps it waiting.
+  if (res.status === 400 || res.status === 404) return { outcome: 'rejected' };
+  return { outcome: 'retry', status: res.status };
+}
+
+/** Save a rating now, or keep it on the device and send it later. */
+export async function postRating(
+  cardId: string,
+  rating: 1 | 2 | 3 | 4,
+): Promise<{ remediated?: string[]; queued?: boolean; needsCode?: boolean }> {
   const item: PendingRating = { cardId, rating, at: new Date().toISOString() };
-  // Keep order: if older ratings are still waiting, this one waits behind them.
+  // Keep order: older waiting ratings go first.
+  if (readQueue().length && navigator.onLine) await flushRatings();
   if (readQueue().length || !navigator.onLine) {
     writeQueue([...readQueue(), item]);
     return { queued: true };
   }
-  try {
-    return await api<{ remediated: string[] }>('review', { method: 'POST', body: JSON.stringify({ cardId, rating }) });
-  } catch (e) {
-    // fetch throws TypeError when the network is unreachable; server errors are real errors.
-    if (!(e instanceof TypeError)) throw e;
-    writeQueue([...readQueue(), item]);
-    return { queued: true };
-  }
+  const r = await send(item);
+  if (r.outcome === 'done') return r.body;
+  if (r.outcome === 'rejected') throw new Error('Rating rejected');
+  writeQueue([...readQueue(), item]);
+  return { queued: true, needsCode: r.status === 401 };
 }
 
 let flushing = false;
 
-/** Send waiting ratings in order. Stops at the first network failure and tries again later. */
+/** Send waiting ratings in order. Stops at the first failure and tries again later. */
 export async function flushRatings(): Promise<number> {
   if (flushing) return 0;
   flushing = true;
   let sent = 0;
   try {
     for (;;) {
-      const [next, ...rest] = readQueue();
+      const next = readQueue()[0];
       if (!next) break;
-      const res = await fetch('/api/sensei/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next) }).catch(() => null);
-      // Keep it on no connection, an expired code (401) or a server hiccup; drop only a rating the server rejects outright.
-      if (!res || !(res.ok || res.status === 400 || res.status === 404 || res.status === 409)) break;
-      writeQueue(rest);
+      const r = await send(next);
+      if (r.outcome === 'retry') break;
+      // Remove exactly the one we sent: ratings may have been added while it was in flight.
+      const q = readQueue();
+      if (q[0]?.cardId === next.cardId && q[0].at === next.at) writeQueue(q.slice(1));
       sent++;
     }
   } finally {
     flushing = false;
   }
   return sent;
+}
+
+/** Cards rated on this device that the server hasn't heard about yet (hidden from a saved review list). */
+export function pendingCardIds(): Set<string> {
+  return new Set(readQueue().map((r) => r.cardId));
 }
 
 export function pendingRatings(): number {
@@ -94,7 +123,16 @@ export function useOnline(): boolean {
     () => true,
   );
   useEffect(() => {
-    if (online) void flushRatings();
+    if (!online) return;
+    void flushRatings();
+    // Also retry on return to the app and every 30 s while anything is waiting (e.g. after a 401 or a restart).
+    const onVisible = () => document.visibilityState === 'visible' && void flushRatings();
+    document.addEventListener('visibilitychange', onVisible);
+    const t = setInterval(() => pendingRatings() > 0 && void flushRatings(), 30_000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(t);
+    };
   }, [online]);
   return online;
 }
@@ -103,6 +141,8 @@ export function useOnline(): boolean {
 export function useServiceWorker() {
   useEffect(() => {
     if (!('serviceWorker' in navigator) || location.hostname === 'localhost') return;
-    navigator.serviceWorker.register('/sensei-sw.js', { scope: '/sensei', updateViaCache: 'none' }).catch(() => undefined);
+    navigator.serviceWorker
+      .register('/sensei-sw.js', { scope: '/sensei', updateViaCache: 'none' })
+      .catch(() => undefined);
   }, []);
 }
