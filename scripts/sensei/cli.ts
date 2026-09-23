@@ -96,6 +96,13 @@ async function main() {
       console.log(`Tagged ${await backfillBoardTags(db, geminiLlm())} concepts; +${await syncCalcCards(db)} calc and +${await syncCaseCards(db)} case cards.`);
       break;
     }
+    case 'textbook-pages': {
+      // One-time for textbooks indexed before printed pages existed.
+      const { setPrintedPages } = await import('@/lib/sensei/ingest');
+      const { rows } = await db.query<{ id: string; title: string }>(`SELECT id, title FROM sensei_source WHERE kind = 'textbook'`);
+      for (const r of rows) console.log(`${r.title}: ${await setPrintedPages(db, r.id)} pages numbered`);
+      break;
+    }
     case 'stats': {
       const { stats } = await import('@/lib/sensei/queries');
       console.log(await stats(db));

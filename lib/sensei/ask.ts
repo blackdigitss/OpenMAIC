@@ -18,7 +18,7 @@ const AnswerSchema = z.object({
 });
 export type SenseiAnswer = z.infer<typeof AnswerSchema> & {
   sources: { n: number; recordId: string; conceptId: string; conceptName: string; statement: string; lectureTitle: string | null; startMs: number | null; audioSourceId: string | null }[];
-  textbook: { ref: string; book: string; page: number; snippet: string }[];
+  textbook: { ref: string; book: string; page: number; cite: string; snippet: string }[];
 };
 
 const SYSTEM = `You are Sensei, a respiratory therapy tutor for one student. Answer from the student's own course facts first.
@@ -77,7 +77,7 @@ export async function askSensei(db: Db, llm: StructuredLlm, question: string, co
     system: SYSTEM,
     prompt:
       `<facts>\n${facts.map((f) => `[${f.n}] (${f.conceptName}) ${f.statement}`).join('\n') || '(none)'}\n</facts>\n\n` +
-      `<textbook>\n${book.map((b) => `[${b.ref}] ${b.book}, p. ${b.page}: ${b.text.slice(0, 1800)}`).join('\n\n') || '(none)'}\n</textbook>\n\n` +
+      `<textbook>\n${book.map((b) => `[${b.ref}] ${b.book}, ${b.cite}: ${b.text.slice(0, 1800)}`).join('\n\n') || '(none)'}\n</textbook>\n\n` +
       `<question>${question}</question>`,
     tier: 'fast',
     purpose: 'ask',
@@ -87,6 +87,6 @@ export async function askSensei(db: Db, llm: StructuredLlm, question: string, co
   return {
     ...out,
     sources: facts.filter((f) => cited.has(f.n)),
-    textbook: book.filter((b) => citedBook.has(b.ref)).map(({ ref, book: title, page, snippet }) => ({ ref, book: title, page, snippet })),
+    textbook: book.filter((b) => citedBook.has(b.ref)).map(({ ref, book: title, page, cite, snippet }) => ({ ref, book: title, page, cite, snippet })),
   };
 }

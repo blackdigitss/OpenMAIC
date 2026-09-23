@@ -208,6 +208,7 @@ export interface ConceptDetail {
   };
   textbook: TextbookPassage[];
   scope: { durability: 'core' | 'module'; by: 'model' | 'user' | null; reason: string | null; modules: string[]; retired: boolean };
+  gap: { adds: string | null; disagreement: string | null; citations: { book: string; cite: string }[] } | null;
   records: ConceptRecord[];
   relations: { direction: 'out' | 'in'; type: string; concept: { id: string; name: string; shortDefinition: string | null } }[];
   mastery: Awaited<ReturnType<typeof conceptMastery>>;
@@ -312,6 +313,12 @@ export async function conceptDetail(db: Db, conceptId: string): Promise<ConceptD
     })),
     mastery: await conceptMastery(db, conceptId),
     scope: await conceptScope(db, conceptId),
+    gap: await db
+      .query<{ adds: string | null; disagreement: string | null; citations: { book: string; cite: string }[] }>(
+        'SELECT adds, disagreement, citations FROM sensei_concept_textbook WHERE concept_id = $1',
+        [conceptId],
+      )
+      .then((r) => r.rows[0] ?? null),
     textbook: await textbookPassages(db, [r0.canonical_name as string, ...aliases.map((a) => a.alias).filter((a) => a.length > 3)], 3),
     cards: { total: Number(cards[0].total), due: Number(cards[0].due) },
   };
@@ -372,7 +379,12 @@ export async function listModules(db: Db): Promise<ModuleInfo[]> {
 export interface TextbookPassage {
   sourceId: string;
   book: string;
+  /** PDF page index. */
   page: number;
+  /** The book's own page number, when known (e.g. "886" or "1179.e1"). */
+  printedPage: string | null;
+  /** Human citation: "p. 886". */
+  cite: string;
   snippet: string;
   text: string;
 }
@@ -385,22 +397,25 @@ export async function textbookPassages(db: Db, terms: string[], limit = 3): Prom
   const query = [...new Set(terms.map((t) => t.trim()).filter(Boolean))].map((t) => `"${t.replace(/"/g, '')}"`).join(' or ');
   if (!query) return [];
   const { rows } = await db.query<Record<string, unknown>>(
-    `SELECT s.id AS source_id, s.title, u.page_no, u.text,
+    `SELECT s.id AS source_id, s.title, u.page_no, u.printed_page, u.text,
             ts_headline('english', u.text, websearch_to_tsquery('english', $1),
                         'MaxWords=45, MinWords=20, MaxFragments=1, StartSel=<<, StopSel=>>') AS snippet,
             ts_rank(to_tsvector('english', u.text), websearch_to_tsquery('english', $1)) AS rank
        FROM sensei_source_unit u JOIN sensei_source s ON s.id = u.source_id
-      WHERE s.kind = 'textbook' AND u.kind = 'page'
+      WHERE s.kind = 'textbook' AND u.kind = 'page' AND length(u.text) >= 200
         AND to_tsvector('english', u.text) @@ websearch_to_tsquery('english', $1)
       ORDER BY rank DESC LIMIT $2`,
     [query, limit],
   );
+  const { citePage, degarble } = await import('./textbook');
   return rows.map((r) => ({
     sourceId: r.source_id as string,
     book: r.title as string,
     page: r.page_no as number,
-    snippet: String(r.snippet).replace(/<<|>>/g, '').replace(/\s+/g, ' ').trim(),
-    text: String(r.text).slice(0, 2500),
+    printedPage: (r.printed_page as string) ?? null,
+    cite: citePage((r.printed_page as string) ?? null, r.page_no as number),
+    snippet: degarble(String(r.snippet).replace(/<<|>>/g, '')).replace(/\s+/g, ' ').trim(),
+    text: degarble(String(r.text)).slice(0, 2500),
   }));
 }
 

@@ -120,7 +120,25 @@ export async function ingestReference(db: Db, path: string, config = senseiConfi
     const parsed = (await pdfPages(data)).map((text, i) => ({ kind: 'page' as const, ordinal: i + 1, pageNo: i + 1, text }));
     pages = (await insertUnits(db, source.id, parsed)).length;
   }
+  await setPrintedPages(db, source.id);
   return { sourceId: source.id, pages, duplicate: !source.created };
+}
+
+/** Fill in printed page numbers for a textbook's pages (idempotent). */
+export async function setPrintedPages(db: Db, sourceId: string): Promise<number> {
+  const { printedPage } = await import('./textbook');
+  const { rows } = await db.query<{ id: string; text: string }>(
+    `SELECT id, text FROM sensei_source_unit WHERE source_id = $1 AND kind = 'page' AND printed_page IS NULL`,
+    [sourceId],
+  );
+  let n = 0;
+  for (const r of rows) {
+    const p = printedPage(r.text);
+    if (!p) continue;
+    await db.query('UPDATE sensei_source_unit SET printed_page = $2 WHERE id = $1', [r.id, p]);
+    n++;
+  }
+  return n;
 }
 
 export async function ingestFile(db: Db, input: IngestInput, config = senseiConfig()): Promise<IngestResult> {
