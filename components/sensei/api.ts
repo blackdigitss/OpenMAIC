@@ -24,6 +24,7 @@ export interface SettingsData {
   notify: { digest: boolean; failures: boolean; budget: boolean };
   budgetUsd: number;
   pauseAtBudget: boolean;
+  personalSpacing: boolean;
   pushDevices: number;
   pushKey: string | null;
   lastBackup: { at: string } | null;
@@ -191,6 +192,14 @@ export function useApi<T>(path: string | null, opts: { pollMs?: number | ((data:
   }, [pollMs, load]);
 
   return { data, error, reload: load };
+}
+
+export interface SpacingData {
+  enabled: boolean;
+  collected: number;
+  needed: number;
+  tuned: { w: number[]; default: number[]; checkedAt: string; improvement: number } | null;
+  checkedAt: string | null;
 }
 
 export function fmtTime(ms: number | null | undefined): string {

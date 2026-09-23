@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 
-import { api, COURSE_COLORS, invalidate, useApi, type BudgetData, type Course, type ModuleInfo, type SettingsData } from './api';
+import { api, COURSE_COLORS, fmtDate, invalidate, useApi, type BudgetData, type Course, type ModuleInfo, type SettingsData, type SpacingData } from './api';
 import { CloseIcon, DocIcon, MicIcon } from './icons';
 import { useSensei } from './store';
 import { Section } from './ui';
@@ -266,6 +266,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           </Section>
           <NotificationsSection />
           <BudgetSection />
+          <SpacingSection />
           <ModulesSection />
           <BackupSection />
           <Section title="About" footer="Sensei is a study aid. Its explanations are for learning, not for real patient care.">
@@ -470,6 +471,45 @@ function BackupSection() {
           </span>
         </div>
       </div>
+    </Section>
+  );
+}
+
+/** Personal spacing: learns how fast you forget, once there's enough evidence. */
+function SpacingSection() {
+  const { data: sp, reload } = useApi<SpacingData>('spacing');
+  if (!sp) return null;
+  const toggle = async (v: boolean) => {
+    await api('settings', { method: 'POST', body: JSON.stringify({ personalSpacing: v }) });
+    void reload();
+    invalidate('review');
+  };
+  const good = sp.tuned ? sp.tuned.w[2] / sp.tuned.default[2] : null;
+  const status = sp.tuned
+    ? `Tuned to you on ${fmtDate(sp.tuned.checkedAt)}. A new card you rate Good comes back ${good! >= 1.05 ? 'later' : good! <= 0.95 ? 'sooner' : 'about as often'} than the standard.`
+    : sp.collected < sp.needed
+      ? `Collecting data (${sp.collected}/${sp.needed}). Keep reviewing and Sensei will learn how fast you forget.`
+      : `Checked ${fmtDate(sp.checkedAt)}: the standard spacing still fits you best.`;
+  return (
+    <Section title="Spacing" footer="Only the first interval of new cards is tuned, and only when it clearly predicts your memory better. Turn it off to go back to the standard spacing.">
+      <div className="s-list">
+        <div className="s-row">
+          <div className="s-row-main">
+            <div className="s-row-sub" style={{ whiteSpace: 'normal' }}>
+              {status}
+            </div>
+          </div>
+        </div>
+        <div className="s-field">
+          <label style={{ width: 'auto', flex: 1 }}>Spacing tuned to you</label>
+          <Toggle on={sp.enabled} label="Spacing tuned to you" onChange={toggle} />
+        </div>
+      </div>
+      {sp.collected < sp.needed && (
+        <div className="s-progress" style={{ margin: '10px 16px 0' }}>
+          <div style={{ width: `${(sp.collected / sp.needed) * 100}%` }} />
+        </div>
+      )}
     </Section>
   );
 }

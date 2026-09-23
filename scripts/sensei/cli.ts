@@ -96,6 +96,13 @@ async function main() {
       console.log(`Tagged ${await backfillBoardTags(db, geminiLlm())} concepts; +${await syncCalcCards(db)} calc and +${await syncCaseCards(db)} case cards.`);
       break;
     }
+    case 'spacing': {
+      // Check personal spacing now instead of waiting for the weekly check.
+      const { maybeTuneSpacing, spacingStatus } = await import('@/lib/sensei/spacing');
+      const run = await maybeTuneSpacing(db, new Date(), true);
+      console.log(run ?? `Collecting data (${(await spacingStatus(db)).collected}/300 first reviews).`);
+      break;
+    }
     case 'textbook-pages': {
       // One-time for textbooks indexed before printed pages existed.
       const { setPrintedPages } = await import('@/lib/sensei/ingest');

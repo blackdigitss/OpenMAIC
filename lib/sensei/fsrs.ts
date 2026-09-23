@@ -107,7 +107,7 @@ export function schedule(card: CardMemory, rating: Rating, now = new Date(), w =
 }
 
 /** Preview the next interval for each rating (shown on the rating buttons, like Anki). */
-export function previewIntervals(card: CardMemory, now = new Date()): Record<Rating, string> {
+export function previewIntervals(card: CardMemory, now = new Date(), w = DEFAULT_W): Record<Rating, string> {
   const fmt = (res: ScheduleResult) => {
     const mins = (res.due.getTime() - now.getTime()) / 60_000;
     if (mins < 60) return `${Math.round(mins)}m`;
@@ -117,9 +117,9 @@ export function previewIntervals(card: CardMemory, now = new Date()): Record<Rat
     return `${(d / 365).toFixed(1)}y`;
   };
   return {
-    1: fmt(schedule(card, 1, now)),
-    2: fmt(schedule(card, 2, now)),
-    3: fmt(schedule(card, 3, now)),
-    4: fmt(schedule(card, 4, now)),
+    1: fmt(schedule(card, 1, now, w)),
+    2: fmt(schedule(card, 2, now, w)),
+    3: fmt(schedule(card, 3, now, w)),
+    4: fmt(schedule(card, 4, now, w)),
   };
 }

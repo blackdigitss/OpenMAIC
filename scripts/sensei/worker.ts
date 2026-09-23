@@ -137,6 +137,10 @@ async function main() {
     await scanInbox().catch((e) => log(`inbox scan failed: ${e.message}`));
     await maybeSendDigest().catch((e) => log(`digest failed: ${e.message}`));
     await checkBudget().catch((e) => log(`budget check failed: ${e.message}`));
+    const { maybeTuneSpacing } = await import('@/lib/sensei/spacing');
+    await maybeTuneSpacing(db)
+      .then((s) => s && log(`spacing checked on ${s.observations} first reviews: ${s.w ? `tuned (${(s.improvement * 100).toFixed(1)}% better)` : 'defaults fit best'}`))
+      .catch((e) => log(`spacing check failed: ${e.message}`));
     // Opt-in: hold new lectures (they stay queued) once the monthly budget is reached.
     const job = budgetPaused ? null : await claimJob(db);
     if (!job) {

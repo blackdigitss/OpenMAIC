@@ -9,6 +9,8 @@ export const SETTING_DEFAULTS = {
   /** Monthly AI budget in USD, and whether to hold new lectures once it's reached. */
   budgetUsd: 60,
   pauseAtBudget: false,
+  /** Use spacing tuned to this student once there's enough evidence (DECISIONS V16). */
+  personalSpacing: true,
 } as const;
 
 export type Settings = {
@@ -16,6 +18,7 @@ export type Settings = {
   notify: { digest: boolean; failures: boolean; budget: boolean };
   budgetUsd: number;
   pauseAtBudget: boolean;
+  personalSpacing: boolean;
 };
 
 export async function getSettings(db: Db): Promise<Settings> {
