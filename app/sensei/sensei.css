@@ -1251,6 +1251,26 @@ a.s-row:active,
   }
 }
 
+.s-offline {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--safe-top) + 8px);
+  transform: translateX(-50%);
+  z-index: 55;
+  padding: 7px 14px;
+  border-radius: 18px;
+  background: var(--bar);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--label-2);
+  text-align: center;
+  width: max-content;
+  max-width: calc(100% - 32px);
+}
+
 .s-toast {
   position: fixed;
   left: 50%;

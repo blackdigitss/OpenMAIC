@@ -250,9 +250,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         return ok({ ok: true });
       }
       case 'review': {
-        const body = (await req.json()) as { cardId: string; rating: Rating };
+        const body = (await req.json()) as { cardId: string; rating: Rating; at?: string };
         if (!UUID.test(body.cardId) || ![1, 2, 3, 4].includes(body.rating)) return fail(400, 'Bad review');
-        return ok(await reviewCard(db, body.cardId, body.rating));
+        // Ratings made offline arrive later with the time they were made (up to two weeks back, never ahead).
+        const at = body.at ? new Date(body.at) : new Date();
+        if (Number.isNaN(at.getTime()) || at.getTime() > Date.now() + 60_000 || Date.now() - at.getTime() > 14 * 86_400_000) return fail(400, 'Bad review time');
+        const { rows: exists } = await db.query('SELECT 1 FROM sensei_card WHERE id = $1', [body.cardId]);
+        if (!exists[0]) return fail(404, 'Card not found');
+        return ok(await reviewCard(db, body.cardId, body.rating, at));
       }
       case 'concept': {
         // POST /concept/<id>/durability { value: 'core' | 'module' } — the student's call wins.

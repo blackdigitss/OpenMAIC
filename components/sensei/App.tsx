@@ -16,6 +16,7 @@ import { Today } from './Today';
 import { Sheet } from './ui';
 import { useApi, type TodayData } from './api';
 import { LessonViewer } from './LessonViewer';
+import { useOnline, useServiceWorker } from './offline';
 
 export function SenseiApp() {
   return (
@@ -54,6 +55,8 @@ function useRememberDevice() {
 
 function Shell() {
   useRememberDevice();
+  useServiceWorker();
+  const online = useOnline();
   const { tab, setTab, routes, sheets, popSheet, closeSheets, reviewing, track } = useSensei();
   const route = routes[tab][routes[tab].length - 1];
   const top = sheets[sheets.length - 1];
@@ -76,6 +79,11 @@ function Shell() {
   return (
     <>
       <div className="s-app" data-sheet={top ? '1' : undefined}>
+        {!online && (
+          <div className="s-offline" role="status">
+            Offline. Showing what you’ve opened before; reviews sync when you’re back.
+          </div>
+        )}
         {screen}
         <nav className="s-tabbar" role="tablist" aria-label="Sensei">
           {tabs.map(({ id, label, Icon, badge }) => (

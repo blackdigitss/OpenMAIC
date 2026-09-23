@@ -3,8 +3,19 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 
-import { api, fmtTime, invalidate, reelUrl, useApi, type CalcItem, type Reel, type ReviewCard, type TodayData } from './api';
+import {
+  api,
+  fmtTime,
+  invalidate,
+  reelUrl,
+  useApi,
+  type CalcItem,
+  type Reel,
+  type ReviewCard,
+  type TodayData,
+} from './api';
 import { PlayIcon } from './icons';
+import { pendingCardIds, postRating } from './offline';
 import { CalcProblem } from './Calc';
 import { CaseQuestion } from './Case';
 import { CheckIcon } from './icons';
@@ -27,18 +38,31 @@ export function ReviewTab() {
   const { data: reels, reload: reloadReels } = useApi<Reel[]>('reels', {
     pollMs: (r) => (r?.some((x) => x.status === 'queued' || x.status === 'building') ? 5000 : 0),
   });
-  const { data: weak } = useApi<{ id: string; name: string; shortDefinition: string | null; lapses: number }[]>('weak');
+  const { data: weak } =
+    useApi<{ id: string; name: string; shortDefinition: string | null; lapses: number }[]>('weak');
   const s = data?.stats;
   const total = s ? s.due + Math.min(s.newCards, 15) : 0;
   const done = s?.reviewedToday ?? 0;
   return (
     <Screen
       title="Review"
-      subtitle={data?.module ? `${data.module.courseCode} Module ${data.module.number}${data.module.instructor ? ` with ${data.module.instructor}` : ''}, plus everything that keeps mattering` : 'Spaced practice from your own lectures'}
+      subtitle={
+        data?.module
+          ? `${data.module.courseCode} Module ${data.module.number}${data.module.instructor ? ` with ${data.module.instructor}` : ''}, plus everything that keeps mattering`
+          : 'Spaced practice from your own lectures'
+      }
     >
-      <div className="s-card" style={{ marginTop: 8, textAlign: 'center', padding: '24px 16px 18px' }}>
+      <div
+        className="s-card"
+        style={{ marginTop: 8, textAlign: 'center', padding: '24px 16px 18px' }}
+      >
         <div style={{ display: 'grid', placeItems: 'center' }}>
-          <Ring value={total + done > 0 ? done / (total + done) : 1} size={132} stroke={14} color={total === 0 ? 'var(--green)' : 'var(--tint)'}>
+          <Ring
+            value={total + done > 0 ? done / (total + done) : 1}
+            size={132}
+            stroke={14}
+            color={total === 0 ? 'var(--green)' : 'var(--tint)'}
+          >
             <div>
               <div style={{ fontSize: 34, fontWeight: 700, lineHeight: '38px' }} className="num">
                 {total}
@@ -75,7 +99,12 @@ export function ReviewTab() {
               {calc
                 .filter((c) => c.unlocked)
                 .map((c) => (
-                  <Row key={c.id} title={c.name} sub={c.conceptName ? `From ${c.conceptName}` : undefined} onClick={() => openSheet({ kind: 'calc', formulaId: c.id })} />
+                  <Row
+                    key={c.id}
+                    title={c.name}
+                    sub={c.conceptName ? `From ${c.conceptName}` : undefined}
+                    onClick={() => openSheet({ kind: 'calc', formulaId: c.id })}
+                  />
                 ))}
             </div>
           )}
@@ -83,12 +112,19 @@ export function ReviewTab() {
       )}
 
       {cases?.some((c) => c.unlocked) && (
-        <Section title="Clinical cases" footer="Board-style scenarios: one best answer, what the RT should do next. A new case every time, scored by the rules, not by AI.">
+        <Section
+          title="Clinical cases"
+          footer="Board-style scenarios: one best answer, what the RT should do next. A new case every time, scored by the rules, not by AI."
+        >
           <div className="s-list">
             {cases
               .filter((c) => c.unlocked)
               .map((c) => (
-                <Row key={c.id} title={c.name} onClick={() => openSheet({ kind: 'case', family: c.id })} />
+                <Row
+                  key={c.id}
+                  title={c.name}
+                  onClick={() => openSheet({ kind: 'case', family: c.id })}
+                />
               ))}
           </div>
         </Section>
@@ -96,12 +132,16 @@ export function ReviewTab() {
 
       {!!s?.retired && (
         <p className="s-foot" style={{ padding: '10px 20px 0' }}>
-          {s.retired} details from finished modules are retired from review. They stay in your Library.
+          {s.retired} details from finished modules are retired from review. They stay in your
+          Library.
         </p>
       )}
 
       {weak && weak.length > 0 && (
-        <Section title="Keeps slipping" footer="Concepts you’ve missed more than once. Tap one to see what your professor said.">
+        <Section
+          title="Keeps slipping"
+          footer="Concepts you’ve missed more than once. Tap one to see what your professor said."
+        >
           <div className="s-list">
             {weak.map((w) => (
               <Row
@@ -120,11 +160,22 @@ export function ReviewTab() {
 }
 
 /** "Hear it from your professor": the module's stressed moments, or your trouble spots, in their voice. */
-function ListenSection({ data, reels, onRequest }: { data?: TodayData; reels?: Reel[]; onRequest: () => void }) {
+function ListenSection({
+  data,
+  reels,
+  onRequest,
+}: {
+  data?: TodayData;
+  reels?: Reel[];
+  onRequest: () => void;
+}) {
   const { play, toast } = useSensei();
   const moduleKey = data?.module ? `module:${data.module.id}` : null;
   const options = [
-    moduleKey && { key: moduleKey, title: `${data!.module!.courseCode} Module ${data!.module!.number}: what your professor stressed` },
+    moduleKey && {
+      key: moduleKey,
+      title: `${data!.module!.courseCode} Module ${data!.module!.number}: what your professor stressed`,
+    },
     { key: 'weak', title: 'Your trouble spots, in your professor’s words' },
   ].filter(Boolean) as { key: string; title: string }[];
   const request = async (key: string, title: string) => {
@@ -133,7 +184,10 @@ function ListenSection({ data, reels, onRequest }: { data?: TodayData; reels?: R
     onRequest();
   };
   return (
-    <Section title="Listen" footer="Exact clips of your professor, stitched into one track. Great for the car or the gym.">
+    <Section
+      title="Listen"
+      footer="Exact clips of your professor, stitched into one track. Great for the car or the gym."
+    >
       <div className="s-list">
         {options.map((o) => {
           const r = reels?.find((x) => x.key === o.key);
@@ -143,10 +197,26 @@ function ListenSection({ data, reels, onRequest }: { data?: TodayData; reels?: R
               key={o.key}
               title={o.title}
               sub={
-                !r ? 'Tap to make it' : r.status === 'ready' ? `${fmtTime(r.durationMs ?? 0)}, ${r.chapters.length} moments` : r.status === 'empty' ? 'Nothing stressed with audio yet' : r.status === 'failed' ? 'Couldn’t build it. Tap to retry.' : 'Cutting clips…'
+                !r
+                  ? 'Tap to make it'
+                  : r.status === 'ready'
+                    ? `${fmtTime(r.durationMs ?? 0)}, ${r.chapters.length} moments`
+                    : r.status === 'empty'
+                      ? 'Nothing stressed with audio yet'
+                      : r.status === 'failed'
+                        ? 'Couldn’t build it. Tap to retry.'
+                        : 'Cutting clips…'
               }
-              trailing={ready ? <PlayIcon style={{ width: 14, height: 14, color: 'var(--tint)' }} /> : undefined}
-              onClick={() => (ready ? play({ url: reelUrl(r!), startMs: 0, label: r!.title, chapters: r!.chapters }) : request(o.key, o.title))}
+              trailing={
+                ready ? (
+                  <PlayIcon style={{ width: 14, height: 14, color: 'var(--tint)' }} />
+                ) : undefined
+              }
+              onClick={() =>
+                ready
+                  ? play({ url: reelUrl(r!), startMs: 0, label: r!.title, chapters: r!.chapters })
+                  : request(o.key, o.title)
+              }
             />
           );
         })}
@@ -158,7 +228,8 @@ function ListenSection({ data, reels, onRequest }: { data?: TodayData; reels?: R
 /** Stable per card, position and day, so the numbers don't change while you type. */
 function seedFor(id: string, i: number): number {
   let h = 2166136261;
-  for (const ch of `${id}:${i}:${new Date().toDateString()}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  for (const ch of `${id}:${i}:${new Date().toDateString()}`)
+    h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
   return h >>> 0;
 }
 
@@ -172,7 +243,13 @@ export function ReviewSession() {
   const [again, setAgain] = useState<ReviewCard[]>([]);
 
   useEffect(() => {
-    void api<ReviewCard[]>(`review${reviewConcept ? `?concept=${reviewConcept}` : ''}`).then((c) => setCards(c));
+    // Offline, this list may be a saved copy: leave out cards already rated on this device.
+    void api<ReviewCard[]>(`review${reviewConcept ? `?concept=${reviewConcept}` : ''}`).then(
+      (c) => {
+        const pending = pendingCardIds();
+        setCards(c.filter((x) => !pending.has(x.id)));
+      },
+    );
   }, [reviewConcept]);
 
   const queue = cards ? [...cards, ...again] : [];
@@ -184,17 +261,14 @@ export function ReviewSession() {
     setReviewed((n) => n + 1);
     if (rating === 1) setAgain((a) => [...a, card]);
     setI((n) => n + 1);
-    // Retry on a flaky connection so a rating is never silently lost.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const res = await api<{ remediated: string[] }>('review', { method: 'POST', body: JSON.stringify({ cardId: card.id, rating }) });
-        if (res.remediated?.length) toast(`Added a refresher on ${res.remediated[0]}`);
-        return;
-      } catch {
-        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-      }
+    // Saved now, or kept on this device and sent when you're back online.
+    try {
+      const res = await postRating(card.id, rating);
+      if (res.remediated?.length) toast(`Added a refresher on ${res.remediated[0]}`);
+      if (res.needsCode) toast('Reopen Sensei and enter your code. Your ratings are saved.');
+    } catch {
+      toast('Couldn’t save that rating. Try again in a moment.');
     }
-    toast('Couldn’t save that rating. Check your connection.');
   };
 
   const close = () => {
@@ -203,13 +277,23 @@ export function ReviewSession() {
   };
 
   return (
-    <motion.div className="s-review" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 34, stiffness: 320 }}>
+    <motion.div
+      className="s-review"
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      transition={{ type: 'spring', damping: 34, stiffness: 320 }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px' }}>
         <button className="s-link" style={{ fontWeight: 600 }} onClick={close}>
           Done
         </button>
         <div className="s-progress" style={{ flex: 1 }}>
-          <div style={{ width: `${queue.length ? (Math.min(i, queue.length) / queue.length) * 100 : 0}%` }} />
+          <div
+            style={{
+              width: `${queue.length ? (Math.min(i, queue.length) / queue.length) * 100 : 0}%`,
+            }}
+          />
         </div>
         <span className="t-foot c2 num" style={{ minWidth: 36, textAlign: 'right' }}>
           {Math.min(i, queue.length)}/{queue.length}
@@ -217,9 +301,19 @@ export function ReviewSession() {
       </div>
 
       {!cards ? (
-        <div style={{ flex: 1, display: 'grid', placeItems: 'center' }} className="c2">Loading…</div>
+        <div style={{ flex: 1, display: 'grid', placeItems: 'center' }} className="c2">
+          Loading…
+        </div>
       ) : !card ? (
-        <div style={{ flex: 1, display: 'grid', placeItems: 'center', textAlign: 'center', padding: 32 }}>
+        <div
+          style={{
+            flex: 1,
+            display: 'grid',
+            placeItems: 'center',
+            textAlign: 'center',
+            padding: 32,
+          }}
+        >
           <div>
             <div style={{ display: 'grid', placeItems: 'center', marginBottom: 16 }}>
               <Ring value={1} size={88} stroke={10} color="var(--green)">
@@ -228,7 +322,9 @@ export function ReviewSession() {
             </div>
             <h2 className="t-title2">{reviewed ? 'Nice work' : 'Nothing to review'}</h2>
             <p className="t-callout c2" style={{ marginTop: 6 }}>
-              {reviewed ? `${reviewed} card${reviewed === 1 ? '' : 's'} reviewed. Sensei will bring each back right before you’d forget it.` : 'New cards appear after each lecture.'}
+              {reviewed
+                ? `${reviewed} card${reviewed === 1 ? '' : 's'} reviewed. Sensei will bring each back right before you’d forget it.`
+                : 'New cards appear after each lecture.'}
             </p>
             <button className="s-btn" style={{ marginTop: 24 }} onClick={close}>
               Done
@@ -263,29 +359,41 @@ export function ReviewSession() {
               </div>
               {card.caseFamily ? (
                 <div style={{ marginTop: 18 }}>
-                  <CaseQuestion family={card.caseFamily} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} doneLabel="Continue" />
+                  <CaseQuestion
+                    family={card.caseFamily}
+                    seed={seedFor(card.id, i)}
+                    onDone={(correct) => rate(correct ? 3 : 1)}
+                    doneLabel="Continue"
+                  />
                 </div>
               ) : card.formulaId ? (
                 <div style={{ marginTop: 18 }}>
-                  <CalcProblem formulaId={card.formulaId} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} doneLabel="Continue" />
+                  <CalcProblem
+                    formulaId={card.formulaId}
+                    seed={seedFor(card.id, i)}
+                    onDone={(correct) => rate(correct ? 3 : 1)}
+                    doneLabel="Continue"
+                  />
                 </div>
               ) : (
-              <>
-              <div className="t-title2" style={{ marginTop: 18, fontWeight: 600 }}>
-                {shown ? <TermText text={card.front} /> : card.front}
-              </div>
-              {shown ? (
-                <div style={{ marginTop: 18, paddingTop: 18, borderTop: '0.5px solid var(--sep)' }}>
-                  <div className="s-prose">
-                    <TermText text={card.back} />
+                <>
+                  <div className="t-title2" style={{ marginTop: 18, fontWeight: 600 }}>
+                    {shown ? <TermText text={card.front} /> : card.front}
                   </div>
-                </div>
-              ) : (
-                <div style={{ marginTop: 'auto', textAlign: 'center' }} className="t-sub c3">
-                  Think of your answer, then tap
-                </div>
-              )}
-              </>
+                  {shown ? (
+                    <div
+                      style={{ marginTop: 18, paddingTop: 18, borderTop: '0.5px solid var(--sep)' }}
+                    >
+                      <div className="s-prose">
+                        <TermText text={card.back} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 'auto', textAlign: 'center' }} className="t-sub c3">
+                      Think of your answer, then tap
+                    </div>
+                  )}
+                </>
               )}
             </motion.div>
           </AnimatePresence>
