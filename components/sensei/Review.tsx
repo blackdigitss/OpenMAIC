@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { api, fmtTime, invalidate, reelUrl, useApi, type CalcItem, type Reel, type ReviewCard, type TodayData } from './api';
 import { PlayIcon } from './icons';
+import { postRating } from './offline';
 import { CalcProblem } from './Calc';
 import { CaseQuestion } from './Case';
 import { CheckIcon } from './icons';
@@ -184,17 +185,13 @@ export function ReviewSession() {
     setReviewed((n) => n + 1);
     if (rating === 1) setAgain((a) => [...a, card]);
     setI((n) => n + 1);
-    // Retry on a flaky connection so a rating is never silently lost.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const res = await api<{ remediated: string[] }>('review', { method: 'POST', body: JSON.stringify({ cardId: card.id, rating }) });
-        if (res.remediated?.length) toast(`Added a refresher on ${res.remediated[0]}`);
-        return;
-      } catch {
-        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
-      }
+    // Saved now, or kept on this device and sent when you're back online.
+    try {
+      const res = await postRating(card.id, rating);
+      if (res.remediated?.length) toast(`Added a refresher on ${res.remediated[0]}`);
+    } catch {
+      toast('Couldn’t save that rating. Try again in a moment.');
     }
-    toast('Couldn’t save that rating. Check your connection.');
   };
 
   const close = () => {
