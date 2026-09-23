@@ -39,29 +39,37 @@ export function tokens(text: string): string[] {
 export function locateQuote(words: Word[], quote: string): [number, number] | null {
   const q = tokens(quote);
   if (q.length === 0) return null;
-  const wt = words.map((w) => tokens(w.text).join(' '));
+  // Tokenize each window's joined text, so jargon split across words ("pack" "O2") still matches.
+  const hits = (s: number, e: number) => {
+    const bag = new Map<string, number>();
+    for (const w of tokens(words.slice(s, e + 1).map((x) => x.text).join(' '))) bag.set(w, (bag.get(w) ?? 0) + 1);
+    let hit = 0;
+    for (const t of q) {
+      const n = bag.get(t) ?? 0;
+      if (n > 0) {
+        hit++;
+        bag.set(t, n - 1);
+      }
+    }
+    return hit;
+  };
   let best: [number, number] | null = null;
   let bestScore = 0;
   for (let len = Math.max(1, q.length - 2); len <= q.length + 4; len++) {
     for (let s = 0; s + len <= words.length; s++) {
-      const bag = new Map<string, number>();
-      for (const w of wt.slice(s, s + len).join(' ').split(' ')) if (w) bag.set(w, (bag.get(w) ?? 0) + 1);
-      let hit = 0;
-      for (const t of q) {
-        const n = bag.get(t) ?? 0;
-        if (n > 0) {
-          hit++;
-          bag.set(t, n - 1);
-        }
-      }
-      const score = hit / q.length - Math.abs(len - q.length) * 0.01;
+      const score = hits(s, s + len - 1) / q.length - Math.abs(len - q.length) * 0.01;
       if (score > bestScore) {
         bestScore = score;
         best = [s, s + len - 1];
       }
     }
   }
-  return bestScore >= 0.75 ? best : null;
+  if (!best || bestScore < 0.75) return null;
+  // Drop edge words that add nothing, so a tie can't start the span on the previous sentence's last word.
+  const h = hits(best[0], best[1]);
+  while (best[0] < best[1] && hits(best[0] + 1, best[1]) === h) best[0]++;
+  while (best[1] > best[0] && hits(best[0], best[1] - 1) === h) best[1]--;
+  return best;
 }
 
 const endsSentence = (w: Word) => /[.?!]["”')]*$/.test(w.text.trim());
@@ -117,11 +125,12 @@ export function clipSpan(words: Word[], span: [number, number], opts: { maxMs?: 
       last = Math.min(cut, last - 1);
     }
   }
-  // Pad into the surrounding pauses without touching neighboring words.
+  // Pad into the surrounding pauses. Whisper's word stamps usually touch (no gap) and are
+  // only roughly placed, so always keep a small minimum pad; the fades hide any breath.
   const prevEnd = first > 0 ? words[first - 1].endMs : words[first].startMs - 400;
   const nextStart = last < words.length - 1 ? words[last + 1].startMs : words[last].endMs + 400;
-  const startMs = Math.max(prevEnd + (words[first].startMs - prevEnd) / 2, words[first].startMs - 250);
-  const endMs = Math.min(nextStart - (nextStart - words[last].endMs) / 2, words[last].endMs + 350);
+  const startMs = Math.min(Math.max(prevEnd + (words[first].startMs - prevEnd) / 2, words[first].startMs - 250), words[first].startMs - 120);
+  const endMs = Math.max(Math.min(nextStart - (nextStart - words[last].endMs) / 2, words[last].endMs + 350), words[last].endMs + 200);
   return {
     first,
     last,

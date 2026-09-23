@@ -50,4 +50,23 @@ describe('reel clip boundaries', () => {
     expect(capped.first).toBeLessThanOrEqual(60);
     expect(capped.last).toBeGreaterThanOrEqual(62);
   });
+
+  it('does not start on the previous sentence when a misheard word makes windows tie (real whisper case)', () => {
+    const words = stream('Remember this for the exam the PaCO2 goes up when ventilation drops. Set the PEEP at 5 cm of water.');
+    const span = locateQuote(words, 'Set the PEEP at 5 cmH2O')!;
+    expect(words[span[0]].text).toBe('Set');
+    expect(clipSpan(words, span, { minMs: 1000 }).text).toBe('Set the PEEP at 5 cm of water.');
+  });
+
+  it('matches jargon split across whisper words ("pack" "O2")', () => {
+    const words = stream('Okay. pack O2 goes up. Next slide.');
+    expect(locateQuote(words, 'PaCO2 goes up')).not.toBeNull();
+  });
+
+  it('keeps a minimum pad when word stamps touch, as whisper output does', () => {
+    const words: Word[] = ['It', 'drops.', 'Set', 'the', 'PEEP.', 'Next'].map((text, i) => ({ text, startMs: 1000 + i * 500, endMs: 1500 + i * 500 }));
+    const clip = clipSpan(words, [2, 4], { minMs: 0 });
+    expect(clip.startMs).toBeLessThanOrEqual(words[2].startMs - 120);
+    expect(clip.endMs).toBeGreaterThanOrEqual(words[4].endMs + 200);
+  });
 });
