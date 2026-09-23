@@ -121,6 +121,7 @@ export function Today() {
                     </button>
                   )}
                 </div>
+                <KeyMoments reel={data.reel} />
                 {d.lecture.classroomUrl && (
                   <button className="s-link t-sub" style={{ marginTop: 12, display: 'block', width: '100%' }} onClick={() => push({ name: 'lecture', id: d.lecture.id })}>
                     See the transcript and everything from this class
@@ -188,6 +189,25 @@ export function Today() {
         </>
       )}
     </Screen>
+  );
+}
+
+/** "Hear it from your professor": the class's stressed moments as one short track. */
+function KeyMoments({ reel }: { reel: TodayData['reel'] }) {
+  const { play } = useSensei();
+  if (!reel || reel.status === 'empty' || reel.status === 'failed') return null;
+  if (reel.status !== 'ready') {
+    return <div className="t-foot c2" style={{ marginTop: 10 }}>Preparing your professor’s key moments…</div>;
+  }
+  return (
+    <button
+      className="s-btn gray"
+      style={{ marginTop: 10 }}
+      onClick={() => play({ url: `/api/sensei/reels/${reel.id}`, startMs: 0, label: reel.title, chapters: reel.chapters })}
+    >
+      <PlayIcon style={{ width: 14, height: 14 }} />
+      Hear the key moments ({fmtTime(reel.durationMs ?? 0)})
+    </button>
   );
 }
 

@@ -82,6 +82,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           lectures,
           digest: latest ? await lectureDigest(db, latest.id) : null,
           coverage: latest?.kind === 'session' ? await deckCoverage(db, latest.id) : null,
+          reel: latest
+            ? await db
+                .query<Record<string, unknown>>(`SELECT id, title, status, duration_ms, chapters FROM sensei_reel WHERE key = $1`, [`lecture:${latest.id}`])
+                .then((r) => (r.rows[0] ? { id: r.rows[0].id, title: r.rows[0].title, status: r.rows[0].status, durationMs: r.rows[0].duration_ms, chapters: r.rows[0].chapters } : null))
+            : null,
           flagged: await flaggedForReview(db, 3),
           stats: await stats(db),
           jobs: jobs.map((j) => ({
@@ -167,6 +172,17 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       }
       case 'audio':
         return streamAudio(req, id);
+      case 'reels': {
+        if (id && UUID.test(id)) {
+          const { rows } = await db.query<{ file: string | null }>(`SELECT file FROM sensei_reel WHERE id = $1 AND status = 'ready'`, [id]);
+          if (!rows[0]?.file) return fail(404, 'Reel not ready');
+          return streamFile(req, rows[0].file, 'audio/mp4');
+        }
+        const { rows } = await db.query<Record<string, unknown>>(
+          `SELECT id, key, title, status, duration_ms, chapters, total, dropped, updated_at FROM sensei_reel ORDER BY updated_at DESC LIMIT 50`,
+        );
+        return ok(rows.map((r) => ({ id: r.id, key: r.key, title: r.title, status: r.status, durationMs: r.duration_ms, chapters: r.chapters, total: r.total, dropped: r.dropped })));
+      }
       default:
         return fail(404, 'Unknown endpoint');
     }
@@ -253,6 +269,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           await setSetting(db, k, v);
         }
         return ok(await getSettings(db));
+      }
+      case 'reels': {
+        // POST /reels/request { key: 'module:<id>' | 'weak' | 'lecture:<id>', title }
+        const body = (await req.json()) as { key?: string; title?: string };
+        if (!body.key || !/^(lecture:[0-9a-f-]{36}|module:[0-9a-f-]{36}|weak)$/.test(body.key)) return fail(400, 'Bad reel');
+        const { requestReel } = await import('@/lib/sensei/reels/build');
+        await requestReel(db, body.key, String(body.title ?? 'Key moments').slice(0, 120));
+        return ok({ ok: true });
       }
       case 'push': {
         if (id === 'subscribe') {
@@ -344,9 +368,13 @@ async function streamAudio(req: NextRequest, sourceId?: string) {
   );
   if (!rows[0]) return fail(404, 'Audio not found');
   const path = rows[0].stored_path;
-  const size = (await stat(path)).size;
   const ext = path.split('.').pop()?.toLowerCase();
-  const type = ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'audio/mp4';
+  return streamFile(req, path, ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'audio/mp4');
+}
+
+/** Serve a local file with HTTP Range support (iOS seeks with ranges). */
+async function streamFile(req: NextRequest, path: string, type: string) {
+  const size = (await stat(path)).size;
   const range = /bytes=(\d*)-(\d*)/.exec(req.headers.get('range') ?? '');
   if (range && (range[1] || range[2])) {
     // "bytes=-N" is the last N bytes; unsatisfiable ranges get 416, not a crash.

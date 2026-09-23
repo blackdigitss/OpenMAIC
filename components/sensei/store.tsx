@@ -14,10 +14,22 @@ export type SheetEntry =
   | { kind: 'calc'; formulaId: string }
   | { kind: 'case'; family: string };
 
+export interface PlayerChapter {
+  offsetMs: number;
+  durationMs: number;
+  text: string;
+  conceptId: string;
+  conceptName: string;
+  lectureTitle: string;
+}
+
 export interface PlayerTrack {
-  sourceId: string;
+  /** Lecture audio source id, or a full URL (reels). */
+  sourceId?: string;
+  url?: string;
   startMs: number;
   label: string;
+  chapters?: PlayerChapter[];
 }
 
 interface Store {
@@ -59,9 +71,9 @@ export function sharedAudio(): HTMLAudioElement {
 
 function startAudio(t: PlayerTrack) {
   const a = sharedAudio();
-  const url = `/api/sensei/audio/${t.sourceId}`;
-  // Start 5 s early so the sentence is heard from its beginning (DECISIONS A8).
-  const at = Math.max(0, t.startMs / 1000 - 5);
+  const url = t.url ?? `/api/sensei/audio/${t.sourceId}`;
+  // Lecture moments start 5 s early so the sentence is heard from its beginning (A8); reels are already exact.
+  const at = Math.max(0, t.startMs / 1000 - (t.url ? 0 : 5));
   if (audioSource !== url) {
     audioSource = url;
     a.src = `${url}#t=${at}`;
