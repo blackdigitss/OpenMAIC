@@ -60,6 +60,16 @@ export function Today() {
           </div>
         </div>
       )}
+      {data.budget.spent >= data.budget.budget * 0.8 && (
+        <div className="s-card" style={{ marginTop: 8, borderLeft: `4px solid ${data.budget.spent >= data.budget.budget ? 'var(--red)' : 'var(--orange)'}` }}>
+          <div className="t-headline">
+            {data.budget.paused ? 'New lectures are waiting for budget' : data.budget.spent >= data.budget.budget ? 'Monthly AI budget reached' : 'AI budget 80% used'}
+          </div>
+          <div className="t-sub c2" style={{ marginTop: 4 }}>
+            About ${data.budget.spent.toFixed(2)} of ${data.budget.budget} this month. Change it under the person icon → Budget.
+          </div>
+        </div>
+      )}
       {data.system.update?.state === 'failed' && (
         <div className="s-card" style={{ marginTop: 8, borderLeft: '4px solid var(--orange)' }}>
           <div className="t-headline">Last update was skipped</div>

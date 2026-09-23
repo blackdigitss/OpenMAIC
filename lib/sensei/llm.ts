@@ -25,6 +25,9 @@ export interface StructuredCall<T> {
   tier: ModelTier;
   /** Optional binary part (e.g. an audio chunk) sent alongside the prompt. */
   file?: { data: Buffer; mediaType: string };
+  /** What this call is for (budget breakdown), e.g. 'transcribe', 'extract', 'cards'. */
+  purpose?: string;
+  lectureId?: string;
 }
 
 export interface StructuredLlm {
@@ -74,7 +77,7 @@ export function geminiLlm(config = senseiConfig()): StructuredLlm {
               ],
             }
           : { prompt: req.prompt }),
-      }, `sensei:${req.tier}`);
+      }, `sensei:${req.purpose ?? req.tier}${req.lectureId ? `:${req.lectureId}` : ''}`);
       const output = req.schema.parse(result.output);
       await mkdir(config.cacheDir, { recursive: true });
       await writeFile(cachePath, JSON.stringify({ model, at: new Date().toISOString(), output }));

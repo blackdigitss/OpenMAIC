@@ -37,6 +37,30 @@ async function main() {
     }
   };
 
+  const { monthSpend } = await import('@/lib/sensei/budget');
+  let lastBudgetCheck = 0;
+  let budgetPaused = false;
+  /** Every 10 minutes: warn at 80% and 100% of the monthly budget (once each per month). */
+  async function checkBudget() {
+    if (Date.now() - lastBudgetCheck < 10 * 60_000) return;
+    lastBudgetCheck = Date.now();
+    const settings = await getSettings(db);
+    const spend = await monthSpend();
+    const pct = spend.total / settings.budgetUsd;
+    budgetPaused = settings.pauseAtBudget && pct >= 1;
+    for (const level of [0.8, 1] as const) {
+      const key = `budgetAlert:${spend.month}:${level}`;
+      if (pct >= level && !(await getState(db, key))) {
+        await setState(db, key, true);
+        await notifyStudent(db, 'budget', {
+          title: level === 1 ? 'Monthly AI budget reached' : 'Budget 80% used',
+          body: `About $${spend.total.toFixed(2)} of your $${settings.budgetUsd} for ${spend.month}.${level === 1 ? (settings.pauseAtBudget ? ' New lectures will wait until you raise it.' : ' Sensei keeps working; change the budget in Settings.') : ''}`,
+          tag: 'budget',
+        }).catch((e) => log(`push failed: ${e.message}`));
+      }
+    }
+  }
+
   /** One evening summary: tonight's lesson + cards due. Sent once a day at the chosen time. */
   async function maybeSendDigest() {
     const settings = await getSettings(db);
@@ -112,7 +136,9 @@ async function main() {
     await writeFile(join(config.home, 'worker-heartbeat'), new Date().toISOString()).catch(() => undefined);
     await scanInbox().catch((e) => log(`inbox scan failed: ${e.message}`));
     await maybeSendDigest().catch((e) => log(`digest failed: ${e.message}`));
-    const job = await claimJob(db);
+    await checkBudget().catch((e) => log(`budget check failed: ${e.message}`));
+    // Opt-in: hold new lectures (they stay queued) once the monthly budget is reached.
+    const job = budgetPaused ? null : await claimJob(db);
     if (job) {
       log(`job ${job.id} started`);
       await runJob({ db, llm, appUrl, accessCode: process.env.ACCESS_CODE, notify }, job)

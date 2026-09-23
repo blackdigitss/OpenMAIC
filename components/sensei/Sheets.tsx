@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 
-import { api, COURSE_COLORS, invalidate, useApi, type Course, type ModuleInfo, type SettingsData } from './api';
+import { api, COURSE_COLORS, invalidate, useApi, type BudgetData, type Course, type ModuleInfo, type SettingsData } from './api';
 import { CloseIcon, DocIcon, MicIcon } from './icons';
 import { useSensei } from './store';
 import { Section } from './ui';
@@ -265,6 +265,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
             </div>
           </Section>
           <NotificationsSection />
+          <BudgetSection />
           <ModulesSection />
           <Section title="About" footer="Sensei is a study aid. Its explanations are for learning, not for real patient care.">
             <div className="s-list">
@@ -372,6 +373,73 @@ function NotificationsSection() {
         <div className="s-field">
           <label style={{ width: 'auto', flex: 1 }}>Budget alerts</label>
           <Toggle on={s.notify.budget} label="Budget alerts" onChange={(v) => save({ notify: { ...s.notify, budget: v } })} />
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function BudgetSection() {
+  const { data: b, reload } = useApi<BudgetData>('budget');
+  const { data: s, reload: reloadSettings } = useApi<SettingsData>('settings');
+  if (!b || !s) return null;
+  const setBudget = async (usd: number) => {
+    await api('settings', { method: 'POST', body: JSON.stringify({ budgetUsd: Math.max(5, Math.round(usd)) }) });
+    void reload();
+    void reloadSettings();
+    invalidate('today');
+  };
+  const pct = Math.min(1, b.total / b.budgetUsd);
+  const suggest = b.daysWithData >= 14 && b.projected ? Math.ceil((b.projected * 1.25) / 5) * 5 : null;
+  return (
+    <Section
+      title="Budget"
+      footer="Prices come from Google’s published rates, so amounts are close estimates. Sensei never switches to cheaper models on its own; at the limit it only warns you, unless you choose to pause."
+    >
+      <div className="s-card" style={{ margin: '0 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div className="t-title2 num">≈${b.total.toFixed(2)}</div>
+          <div className="t-sub c2">of ${b.budgetUsd} this month</div>
+        </div>
+        <div className="s-progress" style={{ marginTop: 10 }}>
+          <div style={{ width: `${pct * 100}%`, background: pct >= 1 ? 'var(--red)' : pct >= 0.8 ? 'var(--orange)' : undefined }} />
+        </div>
+        {b.projected != null && <div className="t-foot c2" style={{ marginTop: 6 }}>At this pace: about ${b.projected.toFixed(0)} this month</div>}
+        {suggest && Math.abs(suggest - b.budgetUsd) >= 5 && (
+          <button className="s-btn small gray" style={{ marginTop: 10 }} onClick={() => setBudget(suggest)}>
+            Set budget to ${suggest} (your pace + 25%)
+          </button>
+        )}
+      </div>
+      {b.byPurpose.length > 0 && (
+        <div className="s-list" style={{ marginTop: 12 }}>
+          {b.byPurpose.map((p) => (
+            <div key={p.purpose} className="s-row">
+              <div className="s-row-main">
+                <div className="s-row-title">{p.label}</div>
+              </div>
+              <span className="s-trail num">${p.usd.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="s-list" style={{ marginTop: 12 }}>
+        <div className="s-field">
+          <label style={{ width: 'auto', flex: 1 }}>Monthly budget</label>
+          <button className="s-btn small gray" aria-label="Lower budget" onClick={() => setBudget(b.budgetUsd - 10)}>−</button>
+          <span className="t-headline num" style={{ minWidth: 48, textAlign: 'center' }}>${b.budgetUsd}</span>
+          <button className="s-btn small gray" aria-label="Raise budget" onClick={() => setBudget(b.budgetUsd + 10)}>+</button>
+        </div>
+        <div className="s-field">
+          <label style={{ width: 'auto', flex: 1 }}>Pause new lectures at the limit</label>
+          <Toggle
+            on={s.pauseAtBudget}
+            label="Pause at limit"
+            onChange={async (v) => {
+              await api('settings', { method: 'POST', body: JSON.stringify({ pauseAtBudget: v }) });
+              void reloadSettings();
+            }}
+          />
         </div>
       </div>
     </Section>

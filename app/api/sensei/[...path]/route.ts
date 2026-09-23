@@ -34,6 +34,7 @@ import { ensureCourse } from '@/lib/sensei/store';
 import { isPushEndpoint } from '@/lib/sensei/push';
 import { notifyStudent, vapidFromEnv } from '@/lib/sensei/notify';
 import { getSettings, setSetting } from '@/lib/sensei/settings';
+import { monthSpend } from '@/lib/sensei/budget';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -96,6 +97,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
             }) ?? null,
           hasKey: Boolean(senseiConfig().googleApiKey),
           system: await systemStatus(),
+          budget: await budgetStatus(db),
         });
       }
       case 'terms':
@@ -135,6 +137,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return ok(await listTextbooks(db));
       case 'modules':
         return ok(await listModules(db));
+      case 'budget':
+        return ok({ ...(await monthSpend()), budgetUsd: (await getSettings(db)).budgetUsd });
       case 'settings': {
         const { rows } = await db.query<{ n: string }>('SELECT count(*) AS n FROM sensei_push_subscription');
         return ok({ ...(await getSettings(db)), pushDevices: Number(rows[0].n), pushKey: vapidFromEnv()?.keys.publicKey ?? null });
@@ -288,6 +292,16 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (error instanceof MissingApiKeyError) return fail(503, 'Sensei needs its Gemini key before it can answer.');
     return fail(500, (error as Error).message);
   }
+}
+
+async function budgetStatus(db: Awaited<ReturnType<typeof senseiDb>>) {
+  const [spend, settings] = await Promise.all([monthSpend(), getSettings(db)]);
+  return {
+    spent: spend.total,
+    budget: settings.budgetUsd,
+    projected: spend.projected,
+    paused: settings.pauseAtBudget && spend.total >= settings.budgetUsd,
+  };
 }
 
 /** Is the worker alive, and how did the last automatic update go? */

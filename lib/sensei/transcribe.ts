@@ -189,6 +189,8 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
           prompt: `Clip ${i + 1} of ${chunks.length}. Timestamps start at 0:00 for THIS clip.${attempt ? ' Previous attempt was rejected; be careful with timestamps and do not repeat text.' : ''}\n\n<slides>\n${slideContext || '(no slides)'}\n</slides>`,
           tier: 'strong',
           file: { data, mediaType: 'audio/mpeg' },
+          purpose: 'transcribe',
+          lectureId: input.lectureId,
         });
         check = validateChunk(out, Math.round(from * 1000), chunkMs);
       }
@@ -269,6 +271,8 @@ export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: st
         system: 'Transcribe this short clip of a respiratory therapy lecture verbatim. Write numbers as digits with units exactly as spoken. Do not guess unclear words; write [unclear].',
         prompt: 'Transcribe the clip.',
         tier: 'strong',
+        purpose: 'verify',
+        lectureId,
         file: { data, mediaType: 'audio/mpeg' },
       });
       checked++;

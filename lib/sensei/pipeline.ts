@@ -159,6 +159,8 @@ export async function processLecture(
         system: EXTRACT_SYSTEM,
         prompt: buildExtractionPrompt(window, candidates, label, slideContext),
         tier: 'fast',
+        purpose: 'extract',
+        lectureId,
       });
       await applyExtraction(db, { lectureId, runId, window, candidates, extraction, report });
       opts.onProgress?.(i + 1, windows.length);
