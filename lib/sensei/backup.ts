@@ -40,10 +40,20 @@ export async function backup(db: Db, config: SenseiConfig): Promise<{ file: stri
   await mkdir(dir, { recursive: true });
   const day = new Date().toISOString().slice(0, 10);
   const file = join(dir, `sensei-${day}.dump`);
-  // Counts are taken just before the dump; no writes happen at 3:30 am in practice, and the
-  // check compares the restored copy against exactly these numbers.
-  await writeFile(file.replace(/\.dump$/, '.counts.json'), JSON.stringify(await rowCounts(db)));
-  await run('pg_dump', ['-Fc', '-f', file, config.databaseUrl]);
+  // Count rows and dump from the same snapshot, so a lecture being processed mid-backup
+  // can't make the restore check disagree with its own dump.
+  const { Client } = await import('pg');
+  const client = new Client({ connectionString: config.databaseUrl });
+  await client.connect();
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    const { rows } = await client.query<{ id: string }>('SELECT pg_export_snapshot() AS id');
+    await writeFile(file.replace(/\.dump$/, '.counts.json'), JSON.stringify(await rowCounts(client as unknown as Db)));
+    await run('pg_dump', ['-Fc', `--snapshot=${rows[0].id}`, '-f', file, config.databaseUrl]);
+    await client.query('COMMIT');
+  } finally {
+    await client.end();
+  }
   const names = (await readdir(dir)).sort();
   for (const old of names.filter((f) => f.endsWith('.dump')).slice(0, -14)) {
     await rm(join(dir, old));
@@ -68,6 +78,13 @@ export function compareCounts(expected: Record<string, number>, actual: Record<s
 export async function mirrored(mirrorDir: string, name: string): Promise<boolean> {
   const exists = (p: string) => stat(p).then(() => true, () => false);
   return (await exists(join(mirrorDir, name))) || (await exists(join(mirrorDir, `.${name}.icloud`)));
+}
+
+/** The tool's own last error line (not "Command failed: <args>"), with any credentials removed. */
+export function commandError(e: unknown): string {
+  const err = e as { stderr?: string; message?: string };
+  const line = err.stderr?.trim().split('\n').filter(Boolean).at(-1) ?? err.message?.split('\n')[0] ?? String(e);
+  return line.replace(/\/\/[^/@\s]*@/g, '//');
 }
 
 export interface RestoreResult {
@@ -107,7 +124,7 @@ export async function restoreCheck(db: Db, config: SenseiConfig): Promise<Restor
       await scratch.end();
     }
   } catch (e) {
-    problems.push(`restore failed: ${(e as Error).message.split('\n')[0]}`);
+    problems.push(`restore failed: ${commandError(e)}`);
   } finally {
     await run('dropdb', ['--if-exists', '--maintenance-db', adminUrl.toString(), SCRATCH_DB]).catch(() => undefined);
   }

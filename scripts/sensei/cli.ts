@@ -102,14 +102,16 @@ async function main() {
       break;
     }
     case 'backup': {
-      // Nightly (launchd 3:30). On the 1st of each month, or with --verify, also prove it restores.
+      // Nightly (launchd 3:30). Once every 28 days, or with --verify, also prove it restores.
       const config = senseiConfig();
       const { backup, restoreCheck } = await import('@/lib/sensei/backup');
-      const { setState } = await import('@/lib/sensei/settings');
+      const { getState, setState } = await import('@/lib/sensei/settings');
       const { file } = await backup(db, config);
       await setState(db, 'lastBackup', { at: new Date().toISOString(), file });
       console.log(`Backed up to ${file}`);
-      if (args.includes('--verify') || new Date().getDate() === 1) {
+      // A failed check is retried nightly until it passes.
+      const last = await getState<{ at: string; ok: boolean }>(db, 'restoreCheck');
+      if (args.includes('--verify') || !last?.ok || Date.now() - Date.parse(last.at) > 28 * 86_400_000) {
         const updating = await promisify(execFile)('pgrep', ['-f', 'sensei/ops/update.sh']).then(() => true, () => false);
         if (updating && !args.includes('--verify')) {
           console.log('Restore check skipped: an update is running; will run tomorrow.');

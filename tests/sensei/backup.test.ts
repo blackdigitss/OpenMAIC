@@ -3,10 +3,18 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
 
-import { compareCounts, mirrored, restoreCheck, SCRATCH_DB } from '@/lib/sensei/backup';
+import { commandError, compareCounts, mirrored, restoreCheck, SCRATCH_DB } from '@/lib/sensei/backup';
 import { senseiConfig } from '@/lib/sensei/config';
 
 describe('restore check', () => {
+  it('reports the tool’s own error without the command line or any password', () => {
+    const e = Object.assign(new Error('Command failed: pg_restore -d postgresql://me:secret@localhost/sensei_restore_check x.dump'), {
+      stderr: 'pg_restore: connecting to database\npg_restore: error: could not open input file "x.dump": No such file\n',
+    });
+    expect(commandError(e)).toBe('pg_restore: error: could not open input file "x.dump": No such file');
+    expect(commandError(new Error('Command failed: createdb postgresql://me:secret@localhost/postgres'))).toBe('Command failed: createdb postgresql://localhost/postgres');
+  });
+
   it('reports every table whose restored count differs', () => {
     expect(compareCounts({ a: 3, b: 5 }, { a: 3, b: 5 })).toEqual([]);
     expect(compareCounts({ a: 3, b: 5 }, { a: 2 })).toEqual(['a: expected 3, restored 2', 'b: expected 5, restored missing']);
