@@ -467,7 +467,7 @@ function BackupSection() {
             {s.restoreCheck && !s.restoreCheck.ok && <div className="s-row-sub" style={{ color: 'var(--red)', whiteSpace: 'normal' }}>{s.restoreCheck.problems[0]}</div>}
           </div>
           <span className="s-trail" style={{ color: s.restoreCheck ? (s.restoreCheck.ok ? 'var(--green)' : 'var(--red)') : undefined }}>
-            {s.restoreCheck ? `${s.restoreCheck.ok ? 'Passed' : 'Failed'} ${when(s.restoreCheck.at)}` : 'First one on the 1st'}
+            {s.restoreCheck ? `${s.restoreCheck.ok ? 'Passed' : 'Failed'} ${when(s.restoreCheck.at)}` : 'Runs with tonight’s backup'}
           </span>
         </div>
       </div>
