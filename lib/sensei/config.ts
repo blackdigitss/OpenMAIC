@@ -26,7 +26,8 @@ export function senseiConfig(env: NodeJS.ProcessEnv = process.env): SenseiConfig
     home,
     libraryDir: join(home, 'files'),
     cacheDir: join(home, 'cache'),
-    inboxDir: resolve(env.SENSEI_INBOX ?? join(home, '..', 'Inbox')),
+    // iCloud Drive → "Sensei Inbox": Voice Memos can Save to Files there from the phone.
+    inboxDir: resolve(env.SENSEI_INBOX ?? join(homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Sensei Inbox')),
     databaseUrl: env.SENSEI_DATABASE_URL ?? 'postgresql://localhost:5432/sensei',
     googleApiKey: env.SENSEI_GOOGLE_API_KEY || env.GOOGLE_API_KEY || undefined,
     fastModel: env.SENSEI_MODEL_FAST ?? 'gemini-3.5-flash',

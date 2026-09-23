@@ -138,7 +138,7 @@ function ConceptRow({ e, onClick }: { e: GlossaryEntry; onClick: () => void }) {
 }
 
 export function LecturePage({ id }: { id: string }) {
-  const { pop, play, tab } = useSensei();
+  const { pop, play, tab, openSheet } = useSensei();
   const { data } = useApi<LectureView>(`lecture/${id}`);
   const [showAll, setShowAll] = useState(false);
   const back = { label: tab === 'today' ? 'Today' : 'Library', onBack: pop };
@@ -174,9 +174,9 @@ export function LecturePage({ id }: { id: string }) {
       )}
       <div style={{ display: 'flex', gap: 10, margin: '14px 16px 0' }}>
         {l.classroomUrl && (
-          <a className="s-btn" href={l.classroomUrl}>
+          <button className="s-btn" onClick={() => openSheet({ kind: 'lesson', url: l.classroomUrl!, title: l.title })}>
             Start lesson
-          </a>
+          </button>
         )}
         {data.audioSourceId && (
           <button className={`s-btn${l.classroomUrl ? ' gray' : ''}`} onClick={() => listen(0)}>

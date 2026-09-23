@@ -160,39 +160,60 @@ export function Ring({ value, size = 44, stroke = 5, color = 'var(--tint)', chil
 }
 
 /**
- * Signature element: the week drawn as ventilator pressure breaths. One breath
- * per lecture; peak height = concepts learned in it. Days without class stay at PEEP.
+ * Signature element: the last 7 days drawn as a ventilator pressure trace.
+ * Each class day is one breath whose peak height is the concepts learned;
+ * days without class stay flat at baseline, like PEEP between breaths.
  */
 export function BreathWave({ week }: { week: { date: string; concepts: number }[] }) {
   const W = 360;
   const H = 88;
   const base = H - 14;
-  const max = Math.max(8, ...week.map((w) => w.concepts));
-  const n = Math.max(week.length, 1);
-  const slot = W / (n + 0.6);
+  const byDay = new Map<string, number>();
+  for (const w of week) byDay.set(w.date, (byDay.get(w.date) ?? 0) + w.concepts);
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return byDay.get(key) ?? 0;
+  });
+  const max = Math.max(8, ...days);
+  const slot = W / 7;
   let d = `M0 ${base}`;
-  week.forEach((w, i) => {
-    const x = slot * (i + 0.3);
-    const peak = base - 12 - (w.concepts / max) * (base - 22);
+  days.forEach((concepts, i) => {
+    if (!concepts) return;
+    const x = slot * i + slot * 0.12;
+    const peak = base - 14 - (concepts / max) * (base - 24);
     const rise = slot * 0.1;
-    const plateau = slot * 0.22;
+    const plateau = slot * 0.24;
     const fall = slot * 0.5;
     d += ` L${x} ${base} C${x + rise * 0.3} ${peak + 6} ${x + rise * 0.6} ${peak} ${x + rise} ${peak}`;
     d += ` L${x + rise + plateau} ${peak + 4}`;
     d += ` C${x + rise + plateau + fall * 0.15} ${base} ${x + rise + plateau + fall * 0.4} ${base} ${x + rise + plateau + fall} ${base}`;
   });
   d += ` L${W} ${base}`;
+  const labels = Array.from({ length: 7 }, (_, i) => {
+    const dt = new Date();
+    dt.setDate(dt.getDate() - (6 - i));
+    return dt.toLocaleDateString(undefined, { weekday: 'narrow' });
+  });
   return (
-    <svg className="s-hero-wave" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
-      <defs>
-        <linearGradient id="s-wave-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="currentColor" stopOpacity="0.22" />
-          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path className="fill" d={`${d} L${W} ${H} L0 ${H} Z`} fill="url(#s-wave-fill)" />
-      <path className="trace" d={d} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" pathLength={1} vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div style={{ position: 'relative' }}>
+      <svg className="s-hero-wave" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-label={`Concepts learned per class day this week: ${days.join(', ')}`} role="img">
+        <defs>
+          <linearGradient id="s-wave-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="currentColor" stopOpacity="0.22" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path className="fill" d={`${d} L${W} ${H} L0 ${H} Z`} fill="url(#s-wave-fill)" />
+        <path className="trace" d={d} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" pathLength={1} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="s-wave-days" aria-hidden>
+        {labels.map((l, i) => (
+          <span key={i} data-on={days[i] ? '1' : undefined}>{l}</span>
+        ))}
+      </div>
+    </div>
   );
 }
 

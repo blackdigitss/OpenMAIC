@@ -9,7 +9,8 @@ export type Route = { name: 'root' } | { name: 'lecture'; id: string };
 export type SheetEntry =
   | { kind: 'concept'; id: string }
   | { kind: 'add' }
-  | { kind: 'settings' };
+  | { kind: 'settings' }
+  | { kind: 'lesson'; url: string; title: string };
 
 export interface PlayerTrack {
   sourceId: string;

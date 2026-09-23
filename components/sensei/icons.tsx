@@ -89,9 +89,11 @@ export const PauseIcon = (p: SVGProps<SVGSVGElement>) => (
 );
 
 export const SkipIcon = ({ back, ...p }: SVGProps<SVGSVGElement> & { back?: boolean }) => (
-  <svg viewBox="0 0 24 24" fill="none" {...p} style={{ transform: back ? 'scaleX(-1)' : undefined }}>
-    <path d="M19 12a7 7 0 11-2.05-4.95" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    <path d="M17.5 3.5v4h-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+  <svg viewBox="0 0 24 24" fill="none" {...p}>
+    <g transform={back ? 'translate(24 0) scale(-1 1)' : undefined}>
+      <path d="M19 12a7 7 0 11-2.05-4.95" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M17.5 3.5v4h-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </g>
     <text x="12" y="15.2" textAnchor="middle" fontSize="7.5" fontWeight="700" fill="currentColor" fontFamily="-apple-system, system-ui">15</text>
   </svg>
 );

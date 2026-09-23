@@ -171,3 +171,14 @@ export function relDay(iso: string | null | undefined): string {
 }
 
 export const COURSE_COLORS = ['#0A84FF', '#30B0C7', '#34C759', '#FF9500', '#FF2D55', '#AF52DE', '#5856D6', '#A2845E'];
+
+/** Turn a pipeline verification note into a sentence for the student. */
+export function humanNote(note: string): string {
+  let m: RegExpMatchArray | null;
+  if ((m = note.match(/^transcript uncertain about "(.+)"$/))) return `Sensei wasn’t sure it heard “${m[1]}” correctly.`;
+  if (note === 'numbers differ from an earlier lecture') return 'An earlier class gave a different number.';
+  if ((m = note.match(/^(?:second listen: )?number (\S+).* not found in source$/))) return `The number ${m[1]} doesn’t match what was said.`;
+  if (/unit mismatch/.test(note)) return 'The units don’t match what was said.';
+  if (note.startsWith('second listen')) return 'A second listen didn’t match.';
+  return note;
+}

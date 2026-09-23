@@ -41,7 +41,7 @@ export function ReviewTab() {
             ? done > 0
               ? `All caught up. ${done} reviewed today.`
               : 'Nothing due. New cards appear after each lecture.'
-            : `${s!.due} due for review${s!.newCards ? `, ${Math.min(s!.newCards, 15)} new` : ''}. Sensei schedules each card right before you’d forget it.`}
+            : `${[s!.due ? `${s!.due} to review` : '', s!.newCards ? `${Math.min(s!.newCards, 15)} new` : ''].filter(Boolean).join(' and ')}. Each card comes back right before you’d forget it.`}
         </p>
         <button className="s-btn" disabled={total === 0} onClick={() => startReview()}>
           {done > 0 && total > 0 ? 'Keep going' : 'Start review'}

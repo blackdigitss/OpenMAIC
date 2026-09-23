@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { api, fmtDate, fmtTime, invalidate, relDay, useApi, type Job, type TodayData } from './api';
+import { api, fmtDate, fmtTime, humanNote, invalidate, relDay, useApi, type Job, type TodayData } from './api';
 import { PersonIcon, PlayIcon, PlusIcon, WaveGlyph } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -72,9 +72,9 @@ export function Today() {
                 <LectureSummary lectureId={d.lecture.id} />
                 <div className="s-actions">
                   {d.lecture.classroomUrl ? (
-                    <a className="s-btn" href={d.lecture.classroomUrl}>
+                    <button className="s-btn" onClick={() => openSheet({ kind: 'lesson', url: d.lecture.classroomUrl!, title: d.lecture.title })}>
                       Start tonight’s lesson
-                    </a>
+                    </button>
                   ) : (
                     <button className="s-btn" onClick={() => push({ name: 'lecture', id: d.lecture.id })}>
                       Open lecture
@@ -249,13 +249,13 @@ function CheckThese({ items }: { items: TodayData['flagged'] }) {
   const decide = async (id: string, decision: 'confirm' | 'reject') => {
     setDone((s) => new Set(s).add(id));
     await api(`flag/${id}`, { method: 'POST', body: JSON.stringify({ decision }) });
-    toast(decision === 'confirm' ? 'Marked as correct' : 'Removed from your notes');
+    toast(decision === 'confirm' ? 'Kept in your notes' : 'Removed from your notes');
     invalidate('today', 'concept');
   };
   const left = items.filter((i) => !done.has(i.recordId));
   if (left.length === 0) return null;
   return (
-    <Section title="Worth a quick check" footer="Sensei heard a number or term it couldn’t confirm. Listen and tap once. Unchecked items stay marked as unconfirmed.">
+    <Section title="Worth a quick check" footer="Sensei couldn’t confirm these. Listen, then keep or remove each one. Anything you skip stays marked unconfirmed.">
       <div style={{ display: 'grid', gap: 10 }}>
         {left.map((f) => (
           <div key={f.recordId} className="s-card">
@@ -265,7 +265,7 @@ function CheckThese({ items }: { items: TodayData['flagged'] }) {
             <div className="t-callout" style={{ marginTop: 4 }}>
               <TermText text={f.statement} />
             </div>
-            {f.notes[0] && <div className="t-foot" style={{ color: 'var(--orange)', marginTop: 4 }}>{f.notes[0]}</div>}
+            {f.notes[0] && <div className="t-foot" style={{ color: 'var(--orange)', marginTop: 4 }}>{humanNote(f.notes[0])}</div>}
             <div className="s-actions" style={{ marginTop: 12, alignItems: 'center' }}>
               {f.audioSourceId && f.startMs != null && (
                 <button className="s-play" style={{ height: 34, borderRadius: 17, padding: '0 12px' }} onClick={() => play({ sourceId: f.audioSourceId!, startMs: f.startMs!, label: `${f.lectureTitle ?? 'Lecture'} · ${fmtTime(f.startMs)}` })}>
@@ -275,10 +275,10 @@ function CheckThese({ items }: { items: TodayData['flagged'] }) {
               )}
               <span style={{ flex: 1 }} />
               <button className="s-btn small gray" onClick={() => decide(f.recordId, 'reject')}>
-                Wrong
+                Remove
               </button>
               <button className="s-btn small" onClick={() => decide(f.recordId, 'confirm')}>
-                Correct
+                Keep
               </button>
             </div>
           </div>

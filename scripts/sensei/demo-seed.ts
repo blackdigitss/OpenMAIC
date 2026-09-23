@@ -141,7 +141,7 @@ async function main() {
   const cid = (n: string) => cs.find((c) => c.canonical_name === n)!.id;
   const cards: [string, string, string, string][] = [
     ['Fraction of inspired oxygen', 'recall', 'What is the FiO2 of room air?', '0.21, or 21% oxygen.'],
-    ['Nasal cannula', 'calculate', 'Estimate the FiO2 for a patient on a nasal cannula at 3 L/min.', 'About 32%: room air 21% plus roughly 4% per liter (21 + 3 × 4 ≈ 33%).'],
+    ['Nasal cannula', 'calculate', 'Estimate the FiO2 for a patient on a nasal cannula at 3 L/min.', 'About 33%: room air 21% plus roughly 4% per liter (21 + 3 × 4).'],
     ['Oxyhemoglobin dissociation curve', 'recall', 'A PaO2 of 60 mmHg corresponds to what saturation?', 'Roughly 90%. Your professor called the 60/90 pair exam material.'],
     ['Oxygen saturation by pulse oximetry', 'apply', 'A firefighter pulled from a house fire has an SpO2 of 99%. Can you trust it?', 'No. The pulse oximeter cannot distinguish carbon monoxide from oxygen, so SpO2 reads falsely high in CO poisoning.'],
     ['Hypoxemia', 'explain', 'How is hypoxemia different from hypoxia?', 'Hypoxemia is low oxygen in the blood (low PaO2); hypoxia is low oxygen at the tissues.'],

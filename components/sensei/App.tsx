@@ -12,6 +12,7 @@ import { SenseiProvider, useSensei, type Tab } from './store';
 import { Today } from './Today';
 import { Sheet } from './ui';
 import { useApi, type TodayData } from './api';
+import { LessonViewer } from './LessonViewer';
 
 export function SenseiApp() {
   return (
@@ -25,6 +26,7 @@ function Shell() {
   const { tab, setTab, routes, sheets, popSheet, closeSheets, reviewing, track } = useSensei();
   const route = routes[tab][routes[tab].length - 1];
   const top = sheets[sheets.length - 1];
+  const lesson = top?.kind === 'lesson' ? top : null;
   const { data } = useApi<TodayData>('today');
   const due = data ? data.stats.due + Math.min(data.stats.newCards, 15) : 0;
 
@@ -56,8 +58,10 @@ function Shell() {
         {!top && !reviewing && <Player />}
       </div>
 
+      <AnimatePresence>{lesson && <LessonViewer key="lesson" url={lesson.url} title={lesson.title} onClose={closeSheets} />}</AnimatePresence>
+
       <AnimatePresence>
-        {top && (
+        {top && !lesson && (
           <Sheet key="sheet" onClose={closeSheets} playerPad={!!track}>
             {top.kind === 'concept' ? (
               <ConceptSheetBody key={`${top.id}-${sheets.length}`} id={top.id} canGoBack={sheets.length > 1} onBack={popSheet} onClose={closeSheets} />
@@ -69,7 +73,7 @@ function Shell() {
           </Sheet>
         )}
       </AnimatePresence>
-      {top && !reviewing && <Player inSheet />}
+      {top && !lesson && !reviewing && <Player inSheet />}
 
       <AnimatePresence>{reviewing && <ReviewSession key="review" />}</AnimatePresence>
     </>

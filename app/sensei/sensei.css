@@ -96,7 +96,8 @@ html:has(.sensei) body {
 .sensei *::after {
   box-sizing: border-box;
 }
-.sensei button {
+/* Resets use :where() so they carry zero specificity and never beat component classes. */
+:where(.sensei) :where(button) {
   font: inherit;
   letter-spacing: inherit;
   color: inherit;
@@ -111,9 +112,12 @@ html:has(.sensei) body {
   outline-offset: 2px;
   border-radius: 6px;
 }
-.sensei a {
+:where(.sensei) :where(a) {
   color: inherit;
   text-decoration: none;
+}
+:where(.sensei) :where(h1, h2, h3, p) {
+  margin: 0;
 }
 
 /* ---------- Type scale (HIG Dynamic Type, "Large") ---------- */
@@ -456,8 +460,13 @@ a.s-row:active,
   gap: 8px;
   overflow-x: auto;
   padding: 0 var(--gutter);
+  scroll-padding-inline: var(--gutter);
   scroll-snap-type: x proximity;
   scrollbar-width: none;
+}
+.s-chips:not(.wrap)::after {
+  content: '';
+  flex: 0 0 calc(var(--gutter) - 8px);
 }
 .s-chips::-webkit-scrollbar {
   display: none;
@@ -766,6 +775,21 @@ a.s-row:active,
   from {
     opacity: 0;
   }
+}
+.s-wave-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 0 0 2px;
+  margin-top: -12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--label-3);
+}
+.s-wave-days span {
+  padding-left: calc(100% * 0.12 + 2px);
+}
+.s-wave-days span[data-on='1'] {
+  color: var(--tint);
 }
 .s-hero-body {
   padding: 4px 16px 16px;

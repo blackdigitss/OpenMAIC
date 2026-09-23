@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { api, fmtDate, fmtTime, useApi, type ConceptDetail, type SenseiAnswer } from './api';
+import { api, fmtDate, fmtTime, humanNote, useApi, type ConceptDetail, type SenseiAnswer } from './api';
 import { ArrowUpIcon, BackChevron, CloseIcon, PlayIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -182,7 +182,7 @@ function RecordRow({ r, conceptId, onPlay, showType }: { r: Rec; conceptId: stri
       </div>
       {flagged && r.verificationNotes.length > 0 && (
         <div className="t-foot" style={{ color: 'var(--orange)', marginTop: 4 }}>
-          {r.verificationNotes[0]}
+          {humanNote(r.verificationNotes[0])}
         </div>
       )}
       {ev && (
