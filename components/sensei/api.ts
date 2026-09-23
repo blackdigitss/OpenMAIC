@@ -19,6 +19,15 @@ export interface Course {
   schedule: { id: string; weekday: number; start: string; end: string }[];
 }
 
+export interface SettingsData {
+  digestTime: string;
+  notify: { digest: boolean; failures: boolean; budget: boolean };
+  budgetUsd: number;
+  pauseAtBudget: boolean;
+  pushDevices: number;
+  pushKey: string | null;
+}
+
 export interface Job {
   id: string;
   status: 'queued' | 'running' | 'failed' | 'needs_course';

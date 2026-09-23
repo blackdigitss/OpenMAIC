@@ -18,7 +18,7 @@ if [ "$1" = "rollback" ]; then
   ln -sfn "$idle" "$CURRENT"
   launchctl kickstart -k "gui/$UID/com.sensei.app"; launchctl kickstart -k "gui/$UID/com.sensei.worker"
   write_status ok "Rolled back to the previous version"
-  notify "Sensei rolled back to the previous version."
+  notify "Sensei rolled back to the previous version." info
   exit 0
 fi
 
@@ -109,4 +109,4 @@ git push -q origin sensei 2>/dev/null || log "sensei branch push skipped"
 changes=$(git log --oneline "$(git rev-parse HEAD^1)..upstream/main" 2>/dev/null | wc -l | tr -d ' ')
 write_status ok "Updated with $changes OpenMAIC changes"
 log "=== update done ($changes upstream commits) ==="
-notify "Sensei updated overnight ($changes improvements from OpenMAIC). Everything passed its checks."
+notify "Sensei updated overnight ($changes improvements from OpenMAIC). Everything passed its checks." info

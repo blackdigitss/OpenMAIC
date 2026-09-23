@@ -343,6 +343,27 @@ SELECT c.id AS concept_id,
  GROUP BY c.id;
 `,
   },
+  {
+    id: '0005_settings_push',
+    sql: `
+-- Small key/value settings the student controls from the app (budget, reminder time, toggles).
+CREATE TABLE sensei_setting (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Web Push subscriptions (one per installed home-screen app).
+CREATE TABLE sensei_push_subscription (
+  endpoint TEXT PRIMARY KEY,
+  keys JSONB NOT NULL,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_ok_at TIMESTAMPTZ,
+  failures INT NOT NULL DEFAULT 0
+);
+`,
+  },
 ];
 
 export interface MigrationQueryable {

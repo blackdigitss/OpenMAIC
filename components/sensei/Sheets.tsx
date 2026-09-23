@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react';
 
-import { api, COURSE_COLORS, invalidate, useApi, type Course, type ModuleInfo } from './api';
+import { api, COURSE_COLORS, invalidate, useApi, type Course, type ModuleInfo, type SettingsData } from './api';
 import { CloseIcon, DocIcon, MicIcon } from './icons';
 import { useSensei } from './store';
 import { Section } from './ui';
@@ -264,6 +264,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           </Section>
+          <NotificationsSection />
           <ModulesSection />
           <Section title="About" footer="Sensei is a study aid. Its explanations are for learning, not for real patient care.">
             <div className="s-list">
@@ -280,6 +281,100 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         </>
       )}
     </>
+  );
+}
+
+function isStandalone(): boolean {
+  const nav = navigator as Navigator & { standalone?: boolean };
+  return nav.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+}
+
+function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64url.length + 3) % 4);
+  const raw = atob(b64);
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button role="switch" aria-checked={on} aria-label={label} className="s-switch" data-on={on ? '1' : undefined} onClick={() => onChange(!on)}>
+      <span />
+    </button>
+  );
+}
+
+function NotificationsSection() {
+  const { toast } = useSensei();
+  const { data: s, reload } = useApi<SettingsData>('settings');
+  const [busy, setBusy] = useState(false);
+  if (!s) return null;
+  const save = async (patch: Partial<SettingsData>) => {
+    await api('settings', { method: 'POST', body: JSON.stringify(patch) });
+    void reload();
+  };
+  const enable = async () => {
+    setBusy(true);
+    try {
+      // Must run inside the tap: iOS only shows the permission prompt for a user gesture.
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast('Notifications are off in iPhone Settings');
+        return;
+      }
+      const reg = await navigator.serviceWorker.register('/sensei-sw.js', { scope: '/sensei', updateViaCache: 'none' });
+      await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(s.pushKey!) });
+      await api('push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
+      await api('push/test', { method: 'POST' });
+      toast('Notifications on');
+      void reload();
+    } catch (e) {
+      toast((e as Error).message || 'Couldn’t turn on notifications');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const canPush = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && isStandalone();
+  return (
+    <Section
+      title="Notifications"
+      footer={
+        !s.pushKey
+          ? 'Notifications will be available after the next Sensei update.'
+          : canPush
+            ? 'One evening summary with tonight’s lesson and cards, plus a heads-up if something goes wrong. Nothing else.'
+            : 'Open Sensei from its Home Screen icon to turn on notifications (iPhone only allows them for home-screen apps).'
+      }
+    >
+      <div className="s-list">
+        {s.pushKey && canPush && (
+          <div className="s-row">
+            <div className="s-row-main">
+              <div className="s-row-title">{s.pushDevices > 0 ? 'On for this device' : 'Off'}</div>
+              <div className="s-row-sub">{s.pushDevices > 0 ? `${s.pushDevices} device${s.pushDevices === 1 ? '' : 's'} signed up` : 'Get tonight’s summary on your lock screen'}</div>
+            </div>
+            <button className="s-btn small" disabled={busy} onClick={enable}>
+              {s.pushDevices > 0 ? 'Send test' : 'Turn on'}
+            </button>
+          </div>
+        )}
+        <div className="s-field">
+          <label style={{ width: 'auto', flex: 1 }}>Evening summary</label>
+          <input type="time" value={s.digestTime} onChange={(e) => save({ digestTime: e.target.value })} disabled={!s.notify.digest} />
+          <Toggle on={s.notify.digest} label="Evening summary" onChange={(v) => save({ notify: { ...s.notify, digest: v } })} />
+        </div>
+        <div className="s-field">
+          <label style={{ width: 'auto', flex: 1 }}>When something goes wrong</label>
+          <Toggle on={s.notify.failures} label="Problems" onChange={(v) => save({ notify: { ...s.notify, failures: v } })} />
+        </div>
+        <div className="s-field">
+          <label style={{ width: 'auto', flex: 1 }}>Budget alerts</label>
+          <Toggle on={s.notify.budget} label="Budget alerts" onChange={(v) => save({ notify: { ...s.notify, budget: v } })} />
+        </div>
+      </div>
+    </Section>
   );
 }
 

@@ -31,6 +31,9 @@ import {
   termDictionary,
 } from '@/lib/sensei/queries';
 import { ensureCourse } from '@/lib/sensei/store';
+import { isPushEndpoint } from '@/lib/sensei/push';
+import { notifyStudent, vapidFromEnv } from '@/lib/sensei/notify';
+import { getSettings, setSetting } from '@/lib/sensei/settings';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -132,6 +135,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return ok(await listTextbooks(db));
       case 'modules':
         return ok(await listModules(db));
+      case 'settings': {
+        const { rows } = await db.query<{ n: string }>('SELECT count(*) AS n FROM sensei_push_subscription');
+        return ok({ ...(await getSettings(db)), pushDevices: Number(rows[0].n), pushKey: vapidFromEnv()?.keys.publicKey ?? null });
+      }
       case 'audio':
         return streamAudio(req, id);
       default:
@@ -206,6 +213,42 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         if (!UUID.test(body.id) || !/^\d{4}-\d{2}-\d{2}$/.test(body.start) || !/^\d{4}-\d{2}-\d{2}$/.test(body.end)) return fail(400, 'Bad dates');
         await db.query(`UPDATE sensei_module SET start_date = $2, end_date = $3, dates_estimated = false WHERE id = $1`, [body.id, body.start, body.end]);
         return ok(await listModules(db));
+      }
+      case 'settings': {
+        const body = (await req.json()) as Record<string, unknown>;
+        const allowed: Record<string, (v: unknown) => boolean> = {
+          digestTime: (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v),
+          notify: (v) => typeof v === 'object' && v !== null && Object.values(v).every((x) => typeof x === 'boolean'),
+          budgetUsd: (v) => typeof v === 'number' && v >= 1 && v <= 1000,
+          pauseAtBudget: (v) => typeof v === 'boolean',
+        };
+        for (const [k, v] of Object.entries(body)) {
+          if (!allowed[k]?.(v)) return fail(400, `Bad setting ${k}`);
+          await setSetting(db, k, v);
+        }
+        return ok(await getSettings(db));
+      }
+      case 'push': {
+        if (id === 'subscribe') {
+          const body = (await req.json()) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+          if (!body.endpoint || !isPushEndpoint(body.endpoint) || !body.keys?.p256dh || !body.keys?.auth) return fail(400, 'Bad subscription');
+          await db.query(
+            `INSERT INTO sensei_push_subscription (endpoint, keys, user_agent) VALUES ($1, $2, $3)
+             ON CONFLICT (endpoint) DO UPDATE SET keys = EXCLUDED.keys, failures = 0`,
+            [body.endpoint, JSON.stringify({ p256dh: body.keys.p256dh, auth: body.keys.auth }), req.headers.get('user-agent')?.slice(0, 200) ?? null],
+          );
+          return ok({ ok: true });
+        }
+        if (id === 'unsubscribe') {
+          const body = (await req.json()) as { endpoint?: string };
+          await db.query('DELETE FROM sensei_push_subscription WHERE endpoint = $1', [body.endpoint ?? '']);
+          return ok({ ok: true });
+        }
+        if (id === 'test') {
+          const n = await notifyStudent(db, 'test', { title: 'Sensei', body: 'Notifications are on. You’ll hear from me tonight.', tag: 'test' });
+          return n > 0 ? ok({ delivered: n }) : fail(502, 'No device received it. Re-enable notifications on this iPhone.');
+        }
+        return fail(404, 'Unknown push action');
       }
       case 'flag': {
         const body = (await req.json()) as { decision: 'confirm' | 'reject' };
