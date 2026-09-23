@@ -40,11 +40,14 @@ export interface SpacingState {
   improvement: number;
 }
 
-/** One observation per eligible card: first rating, whole days to the first later-day review, and the outcome. */
+/**
+ * One observation per eligible card: first rating, whole days to the first later-day review, and the outcome.
+ * Days roll over at 4 am (as in Anki), so a late-night session and the review after midnight count as one day.
+ */
 export async function firstReviewObservations(db: Db): Promise<Observation[]> {
   const { rows } = await db.query<{ first_rating: number; first_day: string; next_day: string; next_rating: number; first_at: Date }>(
     `WITH logs AS (
-       SELECT l.card_id, l.rating, l.reviewed_at, l.reviewed_at::date AS day,
+       SELECT l.card_id, l.rating, l.reviewed_at, (l.reviewed_at - interval '4 hours')::date AS day,
               row_number() OVER (PARTITION BY l.card_id ORDER BY l.reviewed_at) AS n
          FROM sensei_review_log l JOIN sensei_card k ON k.id = l.card_id
         WHERE k.competency IN ('recall', 'explain')),

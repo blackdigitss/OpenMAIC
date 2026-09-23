@@ -2,7 +2,18 @@
 
 import { useRef, useState } from 'react';
 
-import { api, COURSE_COLORS, fmtDate, invalidate, useApi, type BudgetData, type Course, type ModuleInfo, type SettingsData, type SpacingData } from './api';
+import {
+  api,
+  COURSE_COLORS,
+  fmtDate,
+  invalidate,
+  useApi,
+  type BudgetData,
+  type Course,
+  type ModuleInfo,
+  type SettingsData,
+  type SpacingData,
+} from './api';
 import { CloseIcon, DocIcon, MicIcon } from './icons';
 import { useSensei } from './store';
 import { Section } from './ui';
@@ -16,10 +27,13 @@ async function uploadFile(uploadId: string, file: File, onBytes: (n: number) => 
     let attempt = 0;
     for (;;) {
       try {
-        const res = await fetch(`/api/sensei/upload/${uploadId}?name=${encodeURIComponent(file.name)}&offset=${offset}`, {
-          method: 'POST',
-          body: blob,
-        });
+        const res = await fetch(
+          `/api/sensei/upload/${uploadId}?name=${encodeURIComponent(file.name)}&offset=${offset}`,
+          {
+            method: 'POST',
+            body: blob,
+          },
+        );
         const body = (await res.json()) as { received: number };
         if (!res.ok && res.status !== 409) throw new Error('Upload failed');
         offset = body.received; // server is the source of truth, so a retry resumes where it left off
@@ -44,7 +58,9 @@ function uuid(): string {
 }
 
 function fmtSize(n: number) {
-  return n > 1e6 ? `${(n / 1e6).toFixed(n > 1e8 ? 0 : 1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`;
+  return n > 1e6
+    ? `${(n / 1e6).toFixed(n > 1e8 ? 0 : 1)} MB`
+    : `${Math.max(1, Math.round(n / 1e3))} KB`;
 }
 
 export function AddLectureSheet({ onClose }: { onClose: () => void }) {
@@ -66,7 +82,10 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
   const add = (list: FileList | null, role: 'recording' | 'slides' | 'textbook') => {
     if (!list) return;
     const incoming = Array.from(list);
-    setFiles((f) => [...f, ...incoming.filter((x) => !f.some((y) => y.name === x.name && y.size === x.size))]);
+    setFiles((f) => [
+      ...f,
+      ...incoming.filter((x) => !f.some((y) => y.name === x.name && y.size === x.size)),
+    ]);
     setRoles((m) => {
       const next = new Map(m);
       for (const x of incoming) next.set(x, role);
@@ -111,31 +130,99 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
           Cancel
         </button>
         <span className="t-headline">Add a lecture</span>
-        <button className="s-link" style={{ fontWeight: 600, opacity: files.length && !busy ? 1 : 0.35 }} disabled={!files.length || busy} onClick={submit}>
+        <button
+          className="s-link"
+          style={{ fontWeight: 600, opacity: files.length && !busy ? 1 : 0.35 }}
+          disabled={!files.length || busy}
+          onClick={submit}
+        >
           Add
         </button>
       </div>
       <p className="t-sub c2" style={{ padding: '8px 20px 0' }}>
-        Add each class recording on its own. Add the week’s slides once, whenever you get them. Sensei links them up.
+        Add each class recording on its own. Add the week’s slides once, whenever you get them.
+        Sensei links them up.
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '16px 16px 0' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr 1fr',
+          gap: 8,
+          margin: '16px 16px 0',
+        }}
+      >
         {(
           [
-            { role: 'recording', label: 'Recording', sub: 'One class', Icon: MicIcon, color: 'var(--pink)', ref: audioInput },
-            { role: 'slides', label: 'Slides', sub: 'The week’s deck', Icon: DocIcon, color: 'var(--tint)', ref: pdfInput },
-            { role: 'textbook', label: 'Textbook', sub: 'Reference', Icon: DocIcon, color: 'var(--indigo)', ref: bookInput },
+            {
+              role: 'recording',
+              label: 'Recording',
+              sub: 'One class',
+              Icon: MicIcon,
+              color: 'var(--pink)',
+              ref: audioInput,
+            },
+            {
+              role: 'slides',
+              label: 'Slides',
+              sub: 'The week’s deck',
+              Icon: DocIcon,
+              color: 'var(--tint)',
+              ref: pdfInput,
+            },
+            {
+              role: 'textbook',
+              label: 'Textbook',
+              sub: 'Reference',
+              Icon: DocIcon,
+              color: 'var(--indigo)',
+              ref: bookInput,
+            },
           ] as const
         ).map(({ role, label, sub, Icon, color, ref }) => (
-          <button key={role} className="s-card" style={{ display: 'grid', justifyItems: 'center', gap: 6, padding: '16px 6px', margin: 0 }} onClick={() => ref.current?.click()}>
+          <button
+            key={role}
+            className="s-card"
+            style={{
+              display: 'grid',
+              justifyItems: 'center',
+              gap: 6,
+              padding: '16px 6px',
+              margin: 0,
+            }}
+            onClick={() => ref.current?.click()}
+          >
             <Icon style={{ width: 28, height: 28, color }} />
             <span className="t-headline">{label}</span>
-            <span className="t-foot c2" style={{ textAlign: 'center' }}>{sub}</span>
+            <span className="t-foot c2" style={{ textAlign: 'center' }}>
+              {sub}
+            </span>
           </button>
         ))}
       </div>
-      <input ref={audioInput} type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,video/mp4,.txt,.vtt" multiple hidden onChange={(e) => add(e.target.files, 'recording')} />
-      <input ref={pdfInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => add(e.target.files, 'slides')} />
-      <input ref={bookInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => add(e.target.files, 'textbook')} />
+      <input
+        ref={audioInput}
+        type="file"
+        accept="audio/*,.m4a,.mp3,.wav,.aac,video/mp4,.txt,.vtt"
+        multiple
+        hidden
+        onChange={(e) => add(e.target.files, 'recording')}
+      />
+      <input
+        ref={pdfInput}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple
+        hidden
+        onChange={(e) => add(e.target.files, 'slides')}
+      />
+      <input
+        ref={bookInput}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple
+        hidden
+        onChange={(e) => add(e.target.files, 'textbook')}
+      />
 
       {files.length > 0 && (
         <Section title="Files">
@@ -145,16 +232,31 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
                 {roles.get(f) === 'recording' ? (
                   <MicIcon style={{ width: 22, height: 22, color: 'var(--pink)' }} />
                 ) : (
-                  <DocIcon style={{ width: 22, height: 22, color: roles.get(f) === 'textbook' ? 'var(--indigo)' : 'var(--tint)' }} />
+                  <DocIcon
+                    style={{
+                      width: 22,
+                      height: 22,
+                      color: roles.get(f) === 'textbook' ? 'var(--indigo)' : 'var(--tint)',
+                    }}
+                  />
                 )}
                 <div className="s-row-main">
                   <div className="s-row-title clamp1">{f.name}</div>
                   <div className="s-row-sub">
-                    {roles.get(f) === 'textbook' ? 'Textbook' : roles.get(f) === 'slides' ? 'Slides' : 'Recording'}, {fmtSize(f.size)}
+                    {roles.get(f) === 'textbook'
+                      ? 'Textbook'
+                      : roles.get(f) === 'slides'
+                        ? 'Slides'
+                        : 'Recording'}
+                    , {fmtSize(f.size)}
                   </div>
                 </div>
                 {!busy && (
-                  <button aria-label={`Remove ${f.name}`} onClick={() => setFiles((all) => all.filter((x) => x !== f))} style={{ width: 26, height: 26 }}>
+                  <button
+                    aria-label={`Remove ${f.name}`}
+                    onClick={() => setFiles((all) => all.filter((x) => x !== f))}
+                    style={{ width: 26, height: 26 }}
+                  >
                     <CloseIcon />
                   </button>
                 )}
@@ -171,38 +273,68 @@ export function AddLectureSheet({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           )}
-          {err && <p className="s-foot" style={{ color: 'var(--red)' }}>{err}</p>}
+          {err && (
+            <p className="s-foot" style={{ color: 'var(--red)' }}>
+              {err}
+            </p>
+          )}
         </Section>
       )}
 
-      {!onlyBooks && <Section title="Class" footer={hasSchedule ? 'Automatic uses your class schedule and the time the recording was made.' : 'Add your class schedule to have this picked automatically.'}>
-        <div className="s-chips wrap">
-          {hasSchedule && (
-            <button className="s-chip" aria-pressed={course === 'auto'} style={course === 'auto' ? { background: 'var(--tint)', color: 'var(--on-tint)' } : undefined} onClick={() => setCourse('auto')}>
-              Automatic
-            </button>
-          )}
-          {courses?.map((c) => (
-            <button
-              key={c.id}
-              className="s-chip"
-              aria-pressed={course === c.code}
-              style={course === c.code ? { background: c.color ?? 'var(--tint)', color: '#fff' } : undefined}
-              onClick={() => setCourse(c.code)}
-            >
-              {c.code}
-            </button>
-          ))}
-        </div>
-      </Section>}
+      {!onlyBooks && (
+        <Section
+          title="Class"
+          footer={
+            hasSchedule
+              ? 'Automatic uses your class schedule and the time the recording was made.'
+              : 'Add your class schedule to have this picked automatically.'
+          }
+        >
+          <div className="s-chips wrap">
+            {hasSchedule && (
+              <button
+                className="s-chip"
+                aria-pressed={course === 'auto'}
+                style={
+                  course === 'auto'
+                    ? { background: 'var(--tint)', color: 'var(--on-tint)' }
+                    : undefined
+                }
+                onClick={() => setCourse('auto')}
+              >
+                Automatic
+              </button>
+            )}
+            {courses?.map((c) => (
+              <button
+                key={c.id}
+                className="s-chip"
+                aria-pressed={course === c.code}
+                style={
+                  course === c.code
+                    ? { background: c.color ?? 'var(--tint)', color: '#fff' }
+                    : undefined
+                }
+                onClick={() => setCourse(c.code)}
+              >
+                {c.code}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
 
       {onlyBooks && (
         <p className="s-foot" style={{ paddingTop: 16 }}>
-          Textbooks are indexed page by page and used whenever a concept needs more depth, with page numbers. Adding one costs nothing.
+          Textbooks are indexed page by page and used whenever a concept needs more depth, with page
+          numbers. Adding one costs nothing.
         </p>
       )}
 
-      <Section title="Faster next time" footer="In Voice Memos, tap Share, then Save to Files, and choose the “Sensei Inbox” folder in iCloud Drive. Sensei picks it up automatically, even if this app is closed.">
+      <Section
+        title="Faster next time"
+        footer="In Voice Memos, tap Share, then Save to Files, and choose the “Sensei Inbox” folder in iCloud Drive. Sensei picks it up automatically, even if this app is closed."
+      >
         <span />
       </Section>
     </>
@@ -224,7 +356,9 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         ) : (
           <span />
         )}
-        <span className="t-headline">{editing ? (editing.id ? 'Edit class' : 'New class') : 'Your classes'}</span>
+        <span className="t-headline">
+          {editing ? (editing.id ? 'Edit class' : 'New class') : 'Your classes'}
+        </span>
         {editing ? (
           <span style={{ width: 50 }} />
         ) : (
@@ -248,18 +382,38 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
             <div className="s-list">
               {courses?.map((c) => (
                 <button key={c.id} className="s-row" onClick={() => setEditing(c)}>
-                  <span className="s-dot" style={{ background: c.color ?? 'var(--tint)', width: 12, height: 12, borderRadius: 6 }} />
+                  <span
+                    className="s-dot"
+                    style={{
+                      background: c.color ?? 'var(--tint)',
+                      width: 12,
+                      height: 12,
+                      borderRadius: 6,
+                    }}
+                  />
                   <div className="s-row-main">
                     <div className="s-row-title">
                       {c.code} <span className="c2">{c.title !== c.code ? c.title : ''}</span>
                     </div>
                     <div className="s-row-sub">
-                      {c.schedule.length ? c.schedule.map((s) => `${DAYS[s.weekday]} ${s.start}`).join(', ') : 'No schedule yet'}
+                      {c.schedule.length
+                        ? c.schedule.map((s) => `${DAYS[s.weekday]} ${s.start}`).join(', ')
+                        : 'No schedule yet'}
                     </div>
                   </div>
                 </button>
               ))}
-              <button className="s-row" onClick={() => setEditing({ code: '', title: '', color: COURSE_COLORS[(courses?.length ?? 0) % COURSE_COLORS.length], schedule: [] })}>
+              <button
+                className="s-row"
+                onClick={() =>
+                  setEditing({
+                    code: '',
+                    title: '',
+                    color: COURSE_COLORS[(courses?.length ?? 0) % COURSE_COLORS.length],
+                    schedule: [],
+                  })
+                }
+              >
                 <span className="s-row-title tint">Add a class</span>
               </button>
             </div>
@@ -269,13 +423,17 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <SpacingSection />
           <ModulesSection />
           <BackupSection />
-          <Section title="About" footer="Sensei is a study aid. Its explanations are for learning, not for real patient care.">
+          <Section
+            title="About"
+            footer="Sensei is a study aid. Its explanations are for learning, not for real patient care."
+          >
             <div className="s-list">
               <div className="s-row">
                 <div className="s-row-main">
                   <div className="s-row-title">Add to Home Screen</div>
                   <div className="s-row-sub" style={{ whiteSpace: 'normal' }}>
-                    In Safari, tap Share, then Add to Home Screen. Sensei opens full screen like any app.
+                    In Safari, tap Share, then Add to Home Screen. Sensei opens full screen like any
+                    app.
                   </div>
                 </div>
               </div>
@@ -300,9 +458,24 @@ function keyBytes(b64url: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+function Toggle({
+  on,
+  onChange,
+  label,
+}: {
+  on: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
   return (
-    <button role="switch" aria-checked={on} aria-label={label} className="s-switch" data-on={on ? '1' : undefined} onClick={() => onChange(!on)}>
+    <button
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      className="s-switch"
+      data-on={on ? '1' : undefined}
+      onClick={() => onChange(!on)}
+    >
       <span />
     </button>
   );
@@ -326,9 +499,15 @@ function NotificationsSection() {
         toast('Notifications are off in iPhone Settings');
         return;
       }
-      const reg = await navigator.serviceWorker.register('/sensei-sw.js', { scope: '/sensei', updateViaCache: 'none' });
+      const reg = await navigator.serviceWorker.register('/sensei-sw.js', {
+        scope: '/sensei',
+        updateViaCache: 'none',
+      });
       await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(s.pushKey!) });
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: keyBytes(s.pushKey!),
+      });
       await api('push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
       await api('push/test', { method: 'POST' });
       toast('Notifications on');
@@ -339,7 +518,11 @@ function NotificationsSection() {
       setBusy(false);
     }
   };
-  const canPush = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && isStandalone();
+  const canPush =
+    typeof window !== 'undefined' &&
+    'serviceWorker' in navigator &&
+    'PushManager' in window &&
+    isStandalone();
   return (
     <Section
       title="Notifications"
@@ -356,7 +539,11 @@ function NotificationsSection() {
           <div className="s-row">
             <div className="s-row-main">
               <div className="s-row-title">{s.pushDevices > 0 ? 'On for this device' : 'Off'}</div>
-              <div className="s-row-sub">{s.pushDevices > 0 ? `${s.pushDevices} device${s.pushDevices === 1 ? '' : 's'} signed up` : 'Get tonight’s summary on your lock screen'}</div>
+              <div className="s-row-sub">
+                {s.pushDevices > 0
+                  ? `${s.pushDevices} device${s.pushDevices === 1 ? '' : 's'} signed up`
+                  : 'Get tonight’s summary on your lock screen'}
+              </div>
             </div>
             <button className="s-btn small" disabled={busy} onClick={enable}>
               {s.pushDevices > 0 ? 'Send test' : 'Turn on'}
@@ -365,16 +552,33 @@ function NotificationsSection() {
         )}
         <div className="s-field">
           <label style={{ width: 'auto', flex: 1 }}>Evening summary</label>
-          <input type="time" value={s.digestTime} onChange={(e) => save({ digestTime: e.target.value })} disabled={!s.notify.digest} />
-          <Toggle on={s.notify.digest} label="Evening summary" onChange={(v) => save({ notify: { ...s.notify, digest: v } })} />
+          <input
+            type="time"
+            value={s.digestTime}
+            onChange={(e) => save({ digestTime: e.target.value })}
+            disabled={!s.notify.digest}
+          />
+          <Toggle
+            on={s.notify.digest}
+            label="Evening summary"
+            onChange={(v) => save({ notify: { ...s.notify, digest: v } })}
+          />
         </div>
         <div className="s-field">
           <label style={{ width: 'auto', flex: 1 }}>When something goes wrong</label>
-          <Toggle on={s.notify.failures} label="Problems" onChange={(v) => save({ notify: { ...s.notify, failures: v } })} />
+          <Toggle
+            on={s.notify.failures}
+            label="Problems"
+            onChange={(v) => save({ notify: { ...s.notify, failures: v } })}
+          />
         </div>
         <div className="s-field">
           <label style={{ width: 'auto', flex: 1 }}>Budget alerts</label>
-          <Toggle on={s.notify.budget} label="Budget alerts" onChange={(v) => save({ notify: { ...s.notify, budget: v } })} />
+          <Toggle
+            on={s.notify.budget}
+            label="Budget alerts"
+            onChange={(v) => save({ notify: { ...s.notify, budget: v } })}
+          />
         </div>
       </div>
     </Section>
@@ -386,13 +590,17 @@ function BudgetSection() {
   const { data: s, reload: reloadSettings } = useApi<SettingsData>('settings');
   if (!b || !s) return null;
   const setBudget = async (usd: number) => {
-    await api('settings', { method: 'POST', body: JSON.stringify({ budgetUsd: Math.max(5, Math.round(usd)) }) });
+    await api('settings', {
+      method: 'POST',
+      body: JSON.stringify({ budgetUsd: Math.max(5, Math.round(usd)) }),
+    });
     void reload();
     void reloadSettings();
     invalidate('today');
   };
   const pct = Math.min(1, b.total / b.budgetUsd);
-  const suggest = b.daysWithData >= 14 && b.projected ? Math.ceil((b.projected * 1.25) / 5) * 5 : null;
+  const suggest =
+    b.daysWithData >= 14 && b.projected ? Math.ceil((b.projected * 1.25) / 5) * 5 : null;
   return (
     <Section
       title="Budget"
@@ -404,11 +612,24 @@ function BudgetSection() {
           <div className="t-sub c2">of ${b.budgetUsd} this month</div>
         </div>
         <div className="s-progress" style={{ marginTop: 10 }}>
-          <div style={{ width: `${pct * 100}%`, background: pct >= 1 ? 'var(--red)' : pct >= 0.8 ? 'var(--orange)' : undefined }} />
+          <div
+            style={{
+              width: `${pct * 100}%`,
+              background: pct >= 1 ? 'var(--red)' : pct >= 0.8 ? 'var(--orange)' : undefined,
+            }}
+          />
         </div>
-        {b.projected != null && <div className="t-foot c2" style={{ marginTop: 6 }}>At this pace: about ${b.projected.toFixed(0)} this month</div>}
+        {b.projected != null && (
+          <div className="t-foot c2" style={{ marginTop: 6 }}>
+            At this pace: about ${b.projected.toFixed(0)} this month
+          </div>
+        )}
         {suggest && Math.abs(suggest - b.budgetUsd) >= 5 && (
-          <button className="s-btn small gray" style={{ marginTop: 10 }} onClick={() => setBudget(suggest)}>
+          <button
+            className="s-btn small gray"
+            style={{ marginTop: 10 }}
+            onClick={() => setBudget(suggest)}
+          >
             Set budget to ${suggest} (your pace + 25%)
           </button>
         )}
@@ -428,9 +649,23 @@ function BudgetSection() {
       <div className="s-list" style={{ marginTop: 12 }}>
         <div className="s-field">
           <label style={{ width: 'auto', flex: 1 }}>Monthly budget</label>
-          <button className="s-btn small gray" aria-label="Lower budget" onClick={() => setBudget(b.budgetUsd - 10)}>−</button>
-          <span className="t-headline num" style={{ minWidth: 48, textAlign: 'center' }}>${b.budgetUsd}</span>
-          <button className="s-btn small gray" aria-label="Raise budget" onClick={() => setBudget(b.budgetUsd + 10)}>+</button>
+          <button
+            className="s-btn small gray"
+            aria-label="Lower budget"
+            onClick={() => setBudget(b.budgetUsd - 10)}
+          >
+            −
+          </button>
+          <span className="t-headline num" style={{ minWidth: 48, textAlign: 'center' }}>
+            ${b.budgetUsd}
+          </span>
+          <button
+            className="s-btn small gray"
+            aria-label="Raise budget"
+            onClick={() => setBudget(b.budgetUsd + 10)}
+          >
+            +
+          </button>
         </div>
         <div className="s-field">
           <label style={{ width: 'auto', flex: 1 }}>Pause new lectures at the limit</label>
@@ -451,9 +686,15 @@ function BudgetSection() {
 function BackupSection() {
   const { data: s } = useApi<SettingsData>('settings');
   if (!s) return null;
-  const when = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'Not yet');
+  const when = (iso?: string) =>
+    iso
+      ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      : 'Not yet';
   return (
-    <Section title="Backups" footer="Every night your notes and recordings are backed up on this Mac and to iCloud Drive (“Sensei Backups”). Once a month Sensei restores a copy on the side to prove it works.">
+    <Section
+      title="Backups"
+      footer="Every night your notes and recordings are backed up on this Mac and to iCloud Drive (“Sensei Backups”). Once a month Sensei restores a copy on the side to prove it works."
+    >
       <div className="s-list">
         <div className="s-row">
           <div className="s-row-main">
@@ -464,10 +705,25 @@ function BackupSection() {
         <div className="s-row">
           <div className="s-row-main">
             <div className="s-row-title">Restore test</div>
-            {s.restoreCheck && !s.restoreCheck.ok && <div className="s-row-sub" style={{ color: 'var(--red)', whiteSpace: 'normal' }}>{s.restoreCheck.problems[0]}</div>}
+            {s.restoreCheck && !s.restoreCheck.ok && (
+              <div className="s-row-sub" style={{ color: 'var(--red)', whiteSpace: 'normal' }}>
+                {s.restoreCheck.problems[0]}
+              </div>
+            )}
           </div>
-          <span className="s-trail" style={{ color: s.restoreCheck ? (s.restoreCheck.ok ? 'var(--green)' : 'var(--red)') : undefined }}>
-            {s.restoreCheck ? `${s.restoreCheck.ok ? 'Passed' : 'Failed'} ${when(s.restoreCheck.at)}` : 'Runs with tonight’s backup'}
+          <span
+            className="s-trail"
+            style={{
+              color: s.restoreCheck
+                ? s.restoreCheck.ok
+                  ? 'var(--green)'
+                  : 'var(--red)'
+                : undefined,
+            }}
+          >
+            {s.restoreCheck
+              ? `${s.restoreCheck.ok ? 'Passed' : 'Failed'} ${when(s.restoreCheck.at)}`
+              : 'Runs with tonight’s backup'}
           </span>
         </div>
       </div>
@@ -485,13 +741,19 @@ function SpacingSection() {
     invalidate('review');
   };
   const good = sp.tuned ? sp.tuned.w[2] / sp.tuned.default[2] : null;
-  const status = sp.tuned
-    ? `Tuned to you on ${fmtDate(sp.tuned.checkedAt)}. A new card you rate Good comes back ${good! >= 1.05 ? 'later' : good! <= 0.95 ? 'sooner' : 'about as often'} than the standard.`
-    : sp.collected < sp.needed
-      ? `Collecting data (${sp.collected}/${sp.needed}). Keep reviewing and Sensei will learn how fast you forget.`
-      : `Checked ${fmtDate(sp.checkedAt)}: the standard spacing still fits you best.`;
+  const status =
+    sp.tuned && !sp.enabled
+      ? 'Tuned values are ready, but you’re using the standard spacing.'
+      : sp.tuned
+        ? `Tuned to you on ${fmtDate(sp.tuned.checkedAt)}. A new card you rate Good comes back ${good! >= 1.05 ? 'later' : good! <= 0.95 ? 'sooner' : 'about as often'} than the standard.`
+        : sp.collected < sp.needed
+          ? `Collecting data (${sp.collected}/${sp.needed}). Keep reviewing and Sensei will learn how fast you forget.`
+          : `Checked ${fmtDate(sp.checkedAt)}: the standard spacing still fits you best.`;
   return (
-    <Section title="Spacing" footer="Only the first interval of new cards is tuned, and only when it clearly predicts your memory better. Turn it off to go back to the standard spacing.">
+    <Section
+      title="Spacing"
+      footer="Only the first interval of new cards is tuned, and only when it clearly predicts your memory better. Turn it off to go back to the standard spacing."
+    >
       <div className="s-list">
         <div className="s-row">
           <div className="s-row-main">
@@ -525,11 +787,19 @@ function ModulesSection() {
   return (
     <Section
       title="Modules"
-      footer={modules.some((m) => m.estimated) ? 'Dates marked “estimated” come from the college calendar. Adjust them if your professor’s dates differ.' : 'When a module ends, its one-time details retire from review; foundational concepts keep going.'}
+      footer={
+        modules.some((m) => m.estimated)
+          ? 'Dates marked “estimated” come from the college calendar. Adjust them if your professor’s dates differ.'
+          : 'When a module ends, its one-time details retire from review; foundational concepts keep going.'
+      }
     >
       <div className="s-list">
         {modules.map((m) => (
-          <div key={m.id} className="s-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+          <div
+            key={m.id}
+            className="s-row"
+            style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6 }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div className="s-row-title">
                 {m.courseCode} Module {m.number}
@@ -539,10 +809,23 @@ function ModulesSection() {
             <div className="s-row-sub" style={{ whiteSpace: 'normal' }}>
               {[m.instructor, m.title].filter(Boolean).join(', ')}
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} className="s-field-inline">
-              <input type="date" defaultValue={m.start} onBlur={(e) => e.target.value !== m.start && save(m, e.target.value, m.end)} aria-label="Starts" />
+            <div
+              style={{ display: 'flex', gap: 8, alignItems: 'center' }}
+              className="s-field-inline"
+            >
+              <input
+                type="date"
+                defaultValue={m.start}
+                onBlur={(e) => e.target.value !== m.start && save(m, e.target.value, m.end)}
+                aria-label="Starts"
+              />
               <span className="c2">to</span>
-              <input type="date" defaultValue={m.end} onBlur={(e) => e.target.value !== m.end && save(m, m.start, e.target.value)} aria-label="Ends" />
+              <input
+                type="date"
+                defaultValue={m.end}
+                onBlur={(e) => e.target.value !== m.end && save(m, m.start, e.target.value)}
+                aria-label="Ends"
+              />
             </div>
           </div>
         ))}
@@ -555,7 +838,9 @@ function CourseForm({ initial, onSaved }: { initial: Partial<Course>; onSaved: (
   const [code, setCode] = useState(initial.code ?? '');
   const [title, setTitle] = useState(initial.title ?? '');
   const [color, setColor] = useState(initial.color ?? COURSE_COLORS[0]);
-  const [days, setDays] = useState<number[]>([...new Set((initial.schedule ?? []).map((s) => s.weekday))]);
+  const [days, setDays] = useState<number[]>([
+    ...new Set((initial.schedule ?? []).map((s) => s.weekday)),
+  ]);
   const [start, setStart] = useState(initial.schedule?.[0]?.start ?? '09:00');
   const [end, setEnd] = useState(initial.schedule?.[0]?.end ?? '11:00');
   const [busy, setBusy] = useState(false);
@@ -563,7 +848,12 @@ function CourseForm({ initial, onSaved }: { initial: Partial<Course>; onSaved: (
     setBusy(true);
     await api('courses', {
       method: 'POST',
-      body: JSON.stringify({ code, title: title || code, color, schedule: days.map((weekday) => ({ weekday, start, end })) }),
+      body: JSON.stringify({
+        code,
+        title: title || code,
+        color,
+        schedule: days.map((weekday) => ({ weekday, start, end })),
+      }),
     });
     setBusy(false);
     onSaved();
@@ -574,11 +864,21 @@ function CourseForm({ initial, onSaved }: { initial: Partial<Course>; onSaved: (
         <div className="s-list">
           <div className="s-field">
             <label>Short name</label>
-            <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="RESP 110" autoCapitalize="characters" disabled={!!initial.id} />
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="RESP 110"
+              autoCapitalize="characters"
+              disabled={!!initial.id}
+            />
           </div>
           <div className="s-field">
             <label>Full name</label>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Respiratory Physiology" />
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Respiratory Physiology"
+            />
           </div>
         </div>
       </Section>
@@ -586,16 +886,32 @@ function CourseForm({ initial, onSaved }: { initial: Partial<Course>; onSaved: (
         <div className="s-list">
           <div className="s-swatches">
             {COURSE_COLORS.map((c) => (
-              <button key={c} className="s-swatch" aria-label={c} aria-pressed={c === color} style={{ background: c, color: c }} onClick={() => setColor(c)} />
+              <button
+                key={c}
+                className="s-swatch"
+                aria-label={c}
+                aria-pressed={c === color}
+                style={{ background: c, color: c }}
+                onClick={() => setColor(c)}
+              />
             ))}
           </div>
         </div>
       </Section>
-      <Section title="When it meets" footer="Same time on each selected day. Recordings made within 45 minutes of class are filed here.">
+      <Section
+        title="When it meets"
+        footer="Same time on each selected day. Recordings made within 45 minutes of class are filed here."
+      >
         <div className="s-list">
           <div className="s-days">
             {DAYS.map((d, i) => (
-              <button key={d} aria-pressed={days.includes(i)} onClick={() => setDays((all) => (all.includes(i) ? all.filter((x) => x !== i) : [...all, i]))}>
+              <button
+                key={d}
+                aria-pressed={days.includes(i)}
+                onClick={() =>
+                  setDays((all) => (all.includes(i) ? all.filter((x) => x !== i) : [...all, i]))
+                }
+              >
                 {d[0]}
               </button>
             ))}
