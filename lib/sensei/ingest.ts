@@ -89,6 +89,8 @@ export interface IngestInput {
   kind?: SourceKind;
   course: { code: string; title?: string };
   lecture: { date: string; title: string; slideFrom?: number | null; slideTo?: number | null };
+  /** Attach to this existing lecture instead of finding/creating one by (course, date, title). */
+  lectureId?: string;
 }
 
 export interface IngestResult {
@@ -110,7 +112,7 @@ export async function ingestFile(db: Db, input: IngestInput, config = senseiConf
   if (!exists) await copyFile(input.path, storedPath);
 
   const courseId = await ensureCourse(db, input.course.code, input.course.title ?? input.course.code);
-  const lectureId = await ensureLecture(db, { courseId, ...input.lecture });
+  const lectureId = input.lectureId ?? (await ensureLecture(db, { courseId, ...input.lecture }));
   const source = await registerSource(db, {
     sha256: hash, kind, courseId, title: input.lecture.title, originalName: basename(input.path), storedPath,
     metadata: { bytes: data.length },

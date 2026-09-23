@@ -6,10 +6,12 @@
  * and cached raw outputs can be replayed after a schema change (DECISIONS O1).
  */
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { generateText, Output } from 'ai';
+import { Output } from 'ai';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { z } from 'zod';
+
+import { callLLM } from '@/lib/ai/llm';
 
 import { senseiConfig } from './config';
 import { sha256 } from './store';
@@ -53,7 +55,8 @@ export function geminiLlm(config = senseiConfig()): StructuredLlm {
       }
       if (!config.googleApiKey) throw new MissingApiKeyError();
       const google = createGoogleGenerativeAI({ apiKey: config.googleApiKey });
-      const result = await generateText({
+      // Through OpenMAIC's wrapper: usage accounting and the thinking kill switch apply to Sensei too.
+      const result = await callLLM({
         model: google(model),
         system: req.system,
         maxRetries: 3,
@@ -71,7 +74,7 @@ export function geminiLlm(config = senseiConfig()): StructuredLlm {
               ],
             }
           : { prompt: req.prompt }),
-      });
+      }, `sensei:${req.tier}`);
       const output = req.schema.parse(result.output);
       await mkdir(config.cacheDir, { recursive: true });
       await writeFile(cachePath, JSON.stringify({ model, at: new Date().toISOString(), output }));

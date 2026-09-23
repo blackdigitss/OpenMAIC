@@ -52,6 +52,12 @@ describe('numeric fidelity gate', () => {
     expect(checkNumericFidelity('Keep plateau below 30 cmH2O.', 'keep your plateau under thirty centimeters of water').ok).toBe(true);
   });
 
+  it('accepts spoken shorthand units but not real unit changes', () => {
+    expect(checkNumericFidelity('At 2 L/min FiO2 is about 28%.', 'so at 2 liters you are around 28 percent').ok).toBe(true);
+    expect(checkNumericFidelity('Set PEEP to 5 cmH2O.', 'PEEP of five centimeters').ok).toBe(true);
+    expect(checkNumericFidelity('Give 2 L of fluid.', 'give 2 mL of fluid').ok).toBe(false);
+  });
+
   it('flags a changed range endpoint', () => {
     expect(checkNumericFidelity('Tidal volume 8-10 mL/kg.', 'set tidal volume at 6 to 8 mls per kilo').ok).toBe(false);
     expect(checkNumericFidelity('Tidal volume 6-8 mL/kg.', 'set tidal volume at 6 to 8 mls per kilo').ok).toBe(true);

@@ -1,0 +1,95 @@
+/**
+ * Sensei admin CLI.
+ *   tsx scripts/sensei/cli.ts migrate
+ *   tsx scripts/sensei/cli.ts add <file...> --course RESP101 [--date 2026-09-23] [--title "..."]
+ *   tsx scripts/sensei/cli.ts course <CODE> "<Title>" [--color "#0A84FF"]
+ *   tsx scripts/sensei/cli.ts schedule <CODE> <weekday 0-6> <HH:MM> <HH:MM>
+ *   tsx scripts/sensei/cli.ts reprocess <lectureId>
+ *   tsx scripts/sensei/cli.ts stats
+ *   tsx scripts/sensei/cli.ts backup
+ */
+import { loadEnv } from './env';
+import { execFile } from 'child_process';
+import { mkdir } from 'fs/promises';
+import { join, resolve } from 'path';
+import { promisify } from 'util';
+
+loadEnv();
+
+function flag(args: string[], name: string): string | undefined {
+  const i = args.indexOf(`--${name}`);
+  if (i === -1) return undefined;
+  const v = args[i + 1];
+  args.splice(i, 2);
+  return v;
+}
+
+async function main() {
+  const [cmd, ...args] = process.argv.slice(2);
+  const { senseiConfig } = await import('@/lib/sensei/config');
+  const { senseiDb, closeSenseiDb } = await import('@/lib/sensei/db/pool');
+  const db = await senseiDb();
+  switch (cmd) {
+    case 'migrate':
+      console.log('Schema up to date.');
+      break;
+    case 'course': {
+      const color = flag(args, 'color');
+      const { ensureCourse } = await import('@/lib/sensei/store');
+      const id = await ensureCourse(db, args[0], args[1] ?? args[0]);
+      await db.query('UPDATE sensei_course SET title = $2, color = COALESCE($3, color) WHERE id = $1', [id, args[1] ?? args[0], color ?? null]);
+      console.log(`Course ${args[0]} ready.`);
+      break;
+    }
+    case 'schedule': {
+      const [code, weekday, start, end] = args;
+      await db.query(
+        `INSERT INTO sensei_schedule (course_id, weekday, start_time, end_time)
+         SELECT id, $2, $3, $4 FROM sensei_course WHERE code = $1`,
+        [code, Number(weekday), start, end],
+      );
+      console.log(`Scheduled ${code} on day ${weekday} ${start}–${end}.`);
+      break;
+    }
+    case 'add': {
+      const course = flag(args, 'course');
+      const date = flag(args, 'date');
+      const title = flag(args, 'title');
+      const { enqueueLecture } = await import('@/lib/sensei/jobs');
+      const job = await enqueueLecture(db, { files: args.map((f) => resolve(f)), courseCode: course, date, title });
+      console.log(`Queued job ${job.jobId} (${job.status}). The worker will pick it up.`);
+      break;
+    }
+    case 'reprocess': {
+      const { processLecture } = await import('@/lib/sensei/pipeline');
+      const { geminiLlm } = await import('@/lib/sensei/llm');
+      const report = await processLecture(db, geminiLlm(), args[0], {
+        onProgress: (d, n) => process.stdout.write(`\r${d}/${n} windows`),
+      });
+      console.log('\n', report);
+      break;
+    }
+    case 'stats': {
+      const { stats } = await import('@/lib/sensei/queries');
+      console.log(await stats(db));
+      break;
+    }
+    case 'backup': {
+      const config = senseiConfig();
+      const dir = join(config.home, 'backups');
+      await mkdir(dir, { recursive: true });
+      const file = join(dir, `sensei-${new Date().toISOString().slice(0, 10)}.dump`);
+      await promisify(execFile)('pg_dump', ['-Fc', '-f', file, config.databaseUrl]);
+      console.log(`Backed up to ${file}`);
+      break;
+    }
+    default:
+      console.log('Commands: migrate | course | schedule | add | reprocess | stats | backup');
+  }
+  await closeSenseiDb();
+}
+
+main().catch((e) => {
+  console.error(e.message);
+  process.exit(1);
+});

@@ -190,6 +190,77 @@ LEFT JOIN sensei_lecture l ON l.id = e.lecture_id
 GROUP BY c.id;
 `,
   },
+  {
+    id: '0002_jobs_schedule_review',
+    sql: `
+-- One job per lecture processing request; steps are resumable because every
+-- step is idempotent and model calls are cached.
+CREATE TABLE sensei_job (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lecture_id UUID REFERENCES sensei_lecture(id),
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued','running','succeeded','failed','needs_course')),
+  step TEXT,
+  progress REAL NOT NULL DEFAULT 0,
+  detail TEXT,
+  error TEXT,
+  attempts INT NOT NULL DEFAULT 0,
+  input JSONB NOT NULL DEFAULT '{}'::jsonb,
+  result JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX sensei_job_status ON sensei_job (status, created_at);
+
+-- Weekly class schedule: recordings are assigned to a course by when they were made (A17).
+CREATE TABLE sensei_schedule (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID NOT NULL REFERENCES sensei_course(id),
+  weekday INT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL
+);
+
+ALTER TABLE sensei_course ADD COLUMN color TEXT;
+ALTER TABLE sensei_lecture ADD COLUMN summary TEXT;
+
+-- Spaced repetition (FSRS). One card per concept x competency x prompt.
+CREATE TABLE sensei_card (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  concept_id UUID NOT NULL REFERENCES sensei_concept(id),
+  competency TEXT NOT NULL CHECK (competency IN ('recall','explain','calculate','apply')),
+  content_key TEXT NOT NULL UNIQUE,
+  front TEXT NOT NULL,
+  back TEXT NOT NULL,
+  source_record_ids UUID[] NOT NULL DEFAULT '{}',
+  due TIMESTAMPTZ NOT NULL DEFAULT now(),
+  stability REAL NOT NULL DEFAULT 0,
+  difficulty REAL NOT NULL DEFAULT 0,
+  reps INT NOT NULL DEFAULT 0,
+  lapses INT NOT NULL DEFAULT 0,
+  state INT NOT NULL DEFAULT 0,
+  last_review TIMESTAMPTZ,
+  suspended BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX sensei_card_due ON sensei_card (due) WHERE NOT suspended;
+CREATE INDEX sensei_card_concept ON sensei_card (concept_id);
+
+CREATE TABLE sensei_review_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  card_id UUID NOT NULL REFERENCES sensei_card(id),
+  rating INT NOT NULL CHECK (rating BETWEEN 1 AND 4),
+  source TEXT NOT NULL DEFAULT 'sensei_review',
+  reviewed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  stability_before REAL,
+  retrievability REAL
+);
+CREATE INDEX sensei_review_log_card ON sensei_review_log (card_id, reviewed_at);
+
+-- Human decisions on flagged records (A18): one tap confirms or rejects.
+ALTER TABLE sensei_knowledge_record ADD COLUMN reviewed_at TIMESTAMPTZ;
+`,
+  },
 ];
 
 export interface MigrationQueryable {

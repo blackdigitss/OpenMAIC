@@ -148,6 +148,20 @@ export function extractQuantities(text: string, opts: { spokenWords?: boolean } 
   return out;
 }
 
+/**
+ * Units a lecturer routinely drops when speaking: "2 liters" of oxygen means 2 L/min,
+ * "PEEP of 5 centimeters" means cmH2O. Written-unit → spoken forms it may match.
+ */
+const SPOKEN_SHORTHAND: Record<string, string[]> = {
+  'l/min': ['l'],
+  'ml/min': ['ml'],
+  cmh2o: ['cm'],
+};
+
+function unitsCompatible(claimed: string, source: string): boolean {
+  return claimed === source || (SPOKEN_SHORTHAND[claimed] ?? []).includes(source);
+}
+
 export interface NumericCheck {
   ok: boolean;
   problems: string[];
@@ -169,7 +183,7 @@ export function checkNumericFidelity(statement: string, evidence: string): Numer
       problems.push(`number ${q.value}${q.unit ? ' ' + q.unit : ''} not found in source`);
       continue;
     }
-    if (q.unit && matches.every((a) => a.unit !== null && a.unit !== q.unit)) {
+    if (q.unit && matches.every((a) => a.unit !== null && !unitsCompatible(q.unit!, a.unit))) {
       problems.push(`unit mismatch for ${q.value}: statement says ${q.unit}, source says ${matches.map((a) => a.unit).join('/')}`);
     }
   }
