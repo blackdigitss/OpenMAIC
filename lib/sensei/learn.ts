@@ -165,7 +165,8 @@ export async function reviewCard(db: Db, cardId: string, rating: Rating, now = n
   const { rows } = await db.query<Record<string, unknown>>('SELECT * FROM sensei_card WHERE id = $1', [cardId]);
   if (!rows[0]) throw new Error('Card not found');
   const before = toMemory(rows[0]);
-  const next = schedule(before, rating, now);
+  const { activeWeights } = await import('./spacing');
+  const next = schedule(before, rating, now, await activeWeights(db));
   // Guard against a concurrent rating of the same card (double tap, retried POST).
   const updated = await db.query(
     `UPDATE sensei_card SET due = $2, stability = $3, difficulty = $4, reps = $5, lapses = $6, state = $7, last_review = $8

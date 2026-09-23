@@ -35,6 +35,7 @@ import { isPushEndpoint } from '@/lib/sensei/push';
 import { notifyStudent, vapidFromEnv } from '@/lib/sensei/notify';
 import { getSettings, setSetting } from '@/lib/sensei/settings';
 import { monthSpend } from '@/lib/sensei/budget';
+import { activeWeights, spacingStatus } from '@/lib/sensei/spacing';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -126,7 +127,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       case 'review': {
         const conceptId = req.nextUrl.searchParams.get('concept');
         const cards = await dueCards(db, { conceptId: conceptId && UUID.test(conceptId) ? conceptId : undefined });
-        return ok(cards.map((c) => ({ ...c, intervals: previewIntervals(c.memory) })));
+        const w = await activeWeights(db);
+        return ok(cards.map((c) => ({ ...c, intervals: previewIntervals(c.memory, new Date(), w) })));
       }
       case 'weak': {
         const { rows } = await db.query<Record<string, unknown>>(
@@ -179,6 +181,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       }
       case 'audio':
         return streamAudio(req, id);
+      case 'spacing':
+        return ok(await spacingStatus(db));
       case 'reels': {
         if (id && UUID.test(id)) {
           const { rows } = await db.query<{ file: string | null }>(`SELECT file FROM sensei_reel WHERE id = $1 AND status = 'ready'`, [id]);
@@ -270,6 +274,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           notify: (v) => typeof v === 'object' && v !== null && Object.values(v).every((x) => typeof x === 'boolean'),
           budgetUsd: (v) => typeof v === 'number' && v >= 1 && v <= 1000,
           pauseAtBudget: (v) => typeof v === 'boolean',
+          personalSpacing: (v) => typeof v === 'boolean',
         };
         for (const [k, v] of Object.entries(body)) {
           if (!allowed[k]?.(v)) return fail(400, `Bad setting ${k}`);
