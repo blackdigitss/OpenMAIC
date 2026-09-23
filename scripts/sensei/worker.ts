@@ -25,13 +25,40 @@ async function main() {
   const db = await senseiDb();
   const llm = geminiLlm(config);
   const appUrl = process.env.SENSEI_APP_URL ?? 'http://localhost:3000';
-  const notify = async (message: string) => {
-    const handle = process.env.SENSEI_NOTIFY_IMESSAGE;
+  const { notifyStudent } = await import('@/lib/sensei/notify');
+  const { getSettings, getState, setState } = await import('@/lib/sensei/settings');
+  const notify = async (kind: 'ready' | 'failed', message: string) => {
     log(message);
-    if (!handle) return;
-    const script = `tell application "Messages" to send ${JSON.stringify(message)} to participant ${JSON.stringify(handle)} of (1st account whose service type = iMessage)`;
-    await run('osascript', ['-e', script]).catch((e) => log(`iMessage failed: ${e.message}`));
+    if (kind === 'failed') {
+      await notifyStudent(db, 'failures', { title: 'Sensei needs you', body: message, tag: 'failure' }).catch((e) => log(`push failed: ${e.message}`));
+    } else if (await getState<string>(db, 'digestSentOn') === localDateString()) {
+      // After tonight's summary went out, a newly finished lesson gets its own note.
+      await notifyStudent(db, 'digest', { title: 'Lesson ready', body: message, tag: 'ready' }).catch((e) => log(`push failed: ${e.message}`));
+    }
   };
+
+  /** One evening summary: tonight's lesson + cards due. Sent once a day at the chosen time. */
+  async function maybeSendDigest() {
+    const settings = await getSettings(db);
+    const today = localDateString();
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    if (hhmm < settings.digestTime || (await getState<string>(db, 'digestSentOn')) === today) return;
+    await setState(db, 'digestSentOn', today);
+    const { rows: lessons } = await db.query<{ title: string }>(
+      `SELECT title FROM sensei_lecture WHERE kind = 'session' AND status = 'ready' AND lecture_date >= current_date - 1
+        ORDER BY lecture_date DESC, created_at DESC LIMIT 2`,
+    );
+    const { stats } = await import('@/lib/sensei/queries');
+    const s = await stats(db);
+    const cards = s.due + Math.min(s.newCards, 15);
+    if (!lessons.length && cards === 0) return;
+    const parts = [
+      lessons.length ? `${lessons.map((l) => `“${l.title}”`).join(' and ')} lesson${lessons.length > 1 ? 's' : ''} ready` : '',
+      cards ? `${cards} card${cards === 1 ? '' : 's'} to review` : '',
+    ].filter(Boolean);
+    await notifyStudent(db, 'digest', { title: 'Tonight in Sensei', body: parts.join(' · '), tag: 'digest' }).catch((e) => log(`push failed: ${e.message}`));
+  }
 
   const seen = new Map<string, number>();
   // Move out of iCloud into local staging: iCloud may evict files to placeholders later,
@@ -84,6 +111,7 @@ async function main() {
     // Heartbeat: the app shows a warning if this goes stale (worker stopped).
     await writeFile(join(config.home, 'worker-heartbeat'), new Date().toISOString()).catch(() => undefined);
     await scanInbox().catch((e) => log(`inbox scan failed: ${e.message}`));
+    await maybeSendDigest().catch((e) => log(`digest failed: ${e.message}`));
     const job = await claimJob(db);
     if (job) {
       log(`job ${job.id} started`);
@@ -96,6 +124,10 @@ async function main() {
     await new Promise((r) => setTimeout(r, 15_000));
   }
   process.exit(0);
+}
+
+function localDateString(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function log(msg: string) {

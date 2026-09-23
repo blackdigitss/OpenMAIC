@@ -26,10 +26,14 @@ log() { print -r -- "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 # iMessage to the student's phone when SENSEI_NOTIFY_IMESSAGE is set in sensei.env.
 envget() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-; }
 
-notify() {
+notify() { # message [kind: failures (default) | info]
   local handle
   handle=$(envget SENSEI_NOTIFY_IMESSAGE)
   log "notify: $1"
+  # Push to the student's devices for problems only (successes are logged, not pushed).
+  if [ "${2:-failures}" = failures ] && [ -x "$CURRENT/node_modules/.bin/tsx" ]; then
+    (cd "$CURRENT" && node_modules/.bin/tsx scripts/sensei/cli.ts notify failures "$1" >/dev/null 2>&1) || true
+  fi
   [ -z "$handle" ] && return 0
   # Text passed as argv, never spliced into AppleScript source.
   osascript -e 'on run argv' \

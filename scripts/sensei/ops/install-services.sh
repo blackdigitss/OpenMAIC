@@ -3,6 +3,7 @@
 #   com.sensei.app     web app on :3000, restarts if it stops
 #   com.sensei.worker  lecture worker, restarts if it stops
 #   com.sensei.gate    internet door on :3001 (3 code tries per device), used by the tunnel
+#   com.sensei.awake   keeps the Mac from sleeping (caffeinate), so evening pushes and nightly jobs run
 #   com.sensei.update  Sunday 3:00 zero-downtime update
 #   com.sensei.backup  nightly 3:30 database backup
 source "${0:A:h}/common.sh"
@@ -35,6 +36,8 @@ arg() { print -r -- "<string>$1</string>"; }
 plist com.sensei.app "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg app)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
 plist com.sensei.worker "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg worker)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>15</integer>"
 plist com.sensei.gate "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg gate)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
+# Keep the Mac awake (idle + system sleep) without sudo, for as long as the service runs.
+plist com.sensei.awake "$(arg /usr/bin/caffeinate)$(arg -i)$(arg -s)$(arg -m)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>"
 plist com.sensei.update "$(arg /bin/zsh)$(arg "$OPS/update.sh")" "<key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>"
 plist com.sensei.backup "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg backup)" "<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>30</integer></dict>"
 log "Sensei services installed."

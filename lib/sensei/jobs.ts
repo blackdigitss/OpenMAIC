@@ -124,7 +124,8 @@ export interface RunJobDeps {
   llm: StructuredLlm;
   appUrl?: string;
   accessCode?: string;
-  notify?: (message: string) => Promise<void>;
+  /** 'ready' when a class is processed, 'failed' when a job needs attention. */
+  notify?: (kind: 'ready' | 'failed', message: string) => Promise<void>;
 }
 
 export type FileRole = 'slides' | 'textbook' | 'recording';
@@ -222,13 +223,13 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
       [job.id, report ? `${report.recordsWritten} facts · ${report.conceptsCreated} new concepts` : 'Done', JSON.stringify(report ?? {})],
     );
     const { rows: l } = await db.query<{ title: string }>('SELECT title FROM sensei_lecture WHERE id = $1', [lastLecture]);
-    await deps.notify?.(`Sensei: “${l[0]?.title}” is ready.`);
+    await deps.notify?.('ready', `“${l[0]?.title}” is ready.`);
   } catch (error) {
     const message = (error as Error).message;
     await db.query(`UPDATE sensei_job SET status = 'failed', error = $2, detail = 'Something went wrong', updated_at = now() WHERE id = $1`, [
       job.id, message,
     ]);
-    await deps.notify?.(`Sensei couldn’t finish: ${message.slice(0, 140)}. Open Sensei to retry.`);
+    await deps.notify?.('failed', `Couldn’t finish a lecture: ${message.slice(0, 120)}. Open Sensei to retry.`);
     throw error;
   }
 }

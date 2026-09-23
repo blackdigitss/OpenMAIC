@@ -72,6 +72,21 @@ async function main() {
       console.log('\n', report);
       break;
     }
+    case 'notify': {
+      // Used by the shell scripts (updater, backup): cli.ts notify failures "message"
+      const { notifyStudent } = await import('@/lib/sensei/notify');
+      const kind = (['failures', 'budget', 'digest', 'test'].includes(args[0]) ? args[0] : 'failures') as 'failures';
+      const n = await notifyStudent(db, kind, { title: 'Sensei', body: args.slice(1).join(' ') || args[0], tag: kind });
+      console.log(`Delivered to ${n} device(s).`);
+      break;
+    }
+    case 'push-keys': {
+      // One-time: create the VAPID key pair used to sign notifications.
+      const { generateVapidKeys } = await import('@/lib/sensei/push');
+      const k = generateVapidKeys();
+      console.log(`SENSEI_VAPID_PUBLIC=${k.publicKey}\nSENSEI_VAPID_PRIVATE=${k.privateKey}`);
+      break;
+    }
     case 'stats': {
       const { stats } = await import('@/lib/sensei/queries');
       console.log(await stats(db));
