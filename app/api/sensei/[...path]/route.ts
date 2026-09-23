@@ -3,7 +3,7 @@
  * app/api. Protected by the app-wide ACCESS_CODE middleware like every /api route.
  */
 import { createReadStream } from 'fs';
-import { appendFile, mkdir, rename, stat } from 'fs/promises';
+import { appendFile, mkdir, readFile, rename, stat } from 'fs/promises';
 import { basename, join } from 'path';
 import { Readable } from 'stream';
 import { NextRequest, NextResponse } from 'next/server';
@@ -82,6 +82,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           week: week.map((w) => ({ date: w.lecture_date, concepts: Number(w.concepts) })),
           courses: await courses(),
           hasKey: Boolean(senseiConfig().googleApiKey),
+          system: await systemStatus(),
         });
       }
       case 'terms':
@@ -213,6 +214,14 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (error instanceof MissingApiKeyError) return fail(503, 'Sensei needs its Gemini key before it can answer.');
     return fail(500, (error as Error).message);
   }
+}
+
+/** Is the worker alive, and how did the last automatic update go? */
+async function systemStatus() {
+  const config = senseiConfig();
+  const beat = await stat(join(config.home, 'worker-heartbeat')).then((s) => s.mtimeMs, () => null);
+  const update = await readFile(join(config.home, 'update-status.json'), 'utf8').then((t) => JSON.parse(t) as { state: string; message: string; at: string }, () => null);
+  return { workerAlive: beat != null && Date.now() - beat < 5 * 60_000, workerSeen: beat != null, update };
 }
 
 /** Stream lecture audio with HTTP Range support so iOS can seek to a timestamp. */

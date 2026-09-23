@@ -52,6 +52,21 @@ export function Today() {
         </div>
       )}
 
+      {data.system.workerSeen && !data.system.workerAlive && (
+        <div className="s-card" style={{ marginTop: 8, borderLeft: '4px solid var(--red)' }}>
+          <div className="t-headline">The Mac isn’t processing lectures</div>
+          <div className="t-sub c2" style={{ marginTop: 4 }}>
+            Sensei’s worker on the Mac stopped. Recordings are safe and will be processed once it’s running again. Restarting the Mac fixes it.
+          </div>
+        </div>
+      )}
+      {data.system.update?.state === 'failed' && (
+        <div className="s-card" style={{ marginTop: 8, borderLeft: '4px solid var(--orange)' }}>
+          <div className="t-headline">Last update was skipped</div>
+          <div className="t-sub c2" style={{ marginTop: 4 }}>{data.system.update.message} Sensei keeps running the previous version.</div>
+        </div>
+      )}
+
       {data.jobs.map((j) => (
         <JobCard key={j.id} job={j} courses={data.courses.map((c) => c.code)} />
       ))}

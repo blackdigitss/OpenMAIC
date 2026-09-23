@@ -42,6 +42,7 @@ export interface TodayData {
   week: { date: string; concepts: number }[];
   courses: Course[];
   hasKey: boolean;
+  system: { workerAlive: boolean; workerSeen: boolean; update: { state: string; message: string; at: string } | null };
 }
 
 export interface ReviewCard {

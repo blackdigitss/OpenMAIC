@@ -6,7 +6,7 @@
  */
 import { loadEnv } from './env';
 import { execFile } from 'child_process';
-import { mkdir, readdir, rename, stat } from 'fs/promises';
+import { mkdir, readdir, rename, stat, writeFile } from 'fs/promises';
 import { basename, extname, join } from 'path';
 import { promisify } from 'util';
 
@@ -35,12 +35,17 @@ async function main() {
 
   const seen = new Map<string, number>();
   const processed = join(config.inboxDir, '.processed');
-  await mkdir(processed, { recursive: true });
+  await mkdir(processed, { recursive: true }).catch((e) => log(`inbox unavailable: ${e.message}`));
 
   async function scanInbox() {
     const names = await readdir(config.inboxDir).catch(() => [] as string[]);
     for (const name of names) {
-      if (name.startsWith('.') || name.endsWith('.icloud')) continue;
+      if (name.endsWith('.icloud')) {
+        // Cloud-only placeholder (".Name.m4a.icloud"): ask iCloud to download it; picked up next scan.
+        await run('brctl', ['download', join(config.inboxDir, name)]).catch(() => undefined);
+        continue;
+      }
+      if (name.startsWith('.')) continue;
       const path = join(config.inboxDir, name);
       const s = await stat(path).catch(() => null);
       if (!s?.isFile()) continue;
@@ -68,6 +73,8 @@ async function main() {
 
   log(`worker up · inbox ${config.inboxDir} · app ${appUrl}`);
   for (;;) {
+    // Heartbeat: the app shows a warning if this goes stale (worker stopped).
+    await writeFile(join(config.home, 'worker-heartbeat'), new Date().toISOString()).catch(() => undefined);
     await scanInbox().catch((e) => log(`inbox scan failed: ${e.message}`));
     const job = await claimJob(db);
     if (job) {

@@ -1,0 +1,94 @@
+#!/bin/zsh
+# Zero-downtime weekly update (DECISIONS A11, A15, A16).
+#  1. Merge the latest upstream OpenMAIC into the sensei branch in the IDLE slot.
+#  2. Install, run Sensei's tests, build, and smoke-test it on a spare port.
+#  3. Only then point .current at it and restart the services.
+# Any failure leaves the live app untouched and tells the student what happened.
+# Usage: update.sh [--force] | update.sh rollback
+source "${0:A:h}/common.sh"
+exec >> "$LOGS/update.log" 2>&1
+set -o pipefail
+
+live=$(readlink "$CURRENT")
+[ "$live" = "$SLOT_A" ] && idle="$SLOT_B" || idle="$SLOT_A"
+
+if [ "$1" = "rollback" ]; then
+  [ -d "$idle/.next" ] || { log "rollback: no previous build"; exit 1; }
+  ln -sfn "$idle" "$CURRENT"
+  launchctl kickstart -k "gui/$UID/com.sensei.app"; launchctl kickstart -k "gui/$UID/com.sensei.worker"
+  write_status ok "Rolled back to the previous version"
+  notify "Sensei rolled back to the previous version."
+  exit 0
+fi
+
+fail() {
+  log "FAILED: $1"
+  write_status failed "$1"
+  notify "Sensei update skipped: $1 Your app is unchanged."
+  exit 1
+}
+
+log "=== update start (live: $live) ==="
+cd "$live" || fail "live slot missing."
+git fetch -q upstream || fail "couldn't reach GitHub."
+git fetch -q origin 2>/dev/null
+
+if git merge-base --is-ancestor upstream/main sensei && [ "$1" != "--force" ]; then
+  log "already up to date"
+  write_status ok "Already up to date"
+  exit 0
+fi
+
+# Never swap builds while a lecture or a lesson is being generated.
+if psql -d sensei -Atc "select count(*) from sensei_job where status='running'" 2>/dev/null | grep -qv '^0$'; then
+  fail "a lecture is being processed; will try again next time."
+fi
+if grep -l '"status": *"running"' "$LIB/openmaic-data/classroom-jobs/"*.json >/dev/null 2>&1; then
+  fail "a lesson is being generated; will try again next time."
+fi
+
+# Prepare the idle slot at the current sensei commit, then merge upstream there.
+if [ ! -d "$idle/.git" ] && [ ! -f "$idle/.git" ]; then
+  git worktree add -q --detach "$idle" sensei || fail "couldn't create the build folder."
+fi
+cd "$idle" || fail "build folder missing."
+git reset -q --hard && git clean -qfd -e node_modules -e .next
+git checkout -q --detach sensei || fail "couldn't check out sensei."
+if ! git merge -q --no-edit upstream/main -m "Merge upstream OpenMAIC $(git rev-parse --short upstream/main)"; then
+  files=$(git diff --name-only --diff-filter=U | head -5 | tr '\n' ' ')
+  git merge --abort
+  fail "OpenMAIC changed files Sensei also touches ($files). Ask Claude to merge it."
+fi
+link_shared "$idle"
+
+log "installing"
+pnpm install --frozen-lockfile >> "$LOGS/update.log" 2>&1 || pnpm install >> "$LOGS/update.log" 2>&1 || fail "dependency install failed."
+log "testing"
+node_modules/.bin/vitest run tests/sensei >> "$LOGS/update.log" 2>&1 || fail "Sensei's tests failed on the new version."
+log "building"
+pnpm build >> "$LOGS/update.log" 2>&1 || fail "the new version didn't build."
+
+log "smoke test"
+node_modules/.bin/next start -p 3101 >> "$LOGS/update.log" 2>&1 &
+smoke=$!
+ok=0
+for i in {1..60}; do
+  sleep 2
+  if curl -sf -o /dev/null http://localhost:3101/api/health; then ok=1; break; fi
+done
+code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3101/sensei)
+kill $smoke 2>/dev/null; wait $smoke 2>/dev/null
+[ $ok = 1 ] && [ "$code" = 200 ] || fail "the new version didn't start correctly."
+
+# Swap and restart.
+ln -sfn "$idle" "$CURRENT"
+launchctl kickstart -k "gui/$UID/com.sensei.app"
+launchctl kickstart -k "gui/$UID/com.sensei.worker"
+git update-ref refs/heads/sensei HEAD
+# Keep the fork's main a clean mirror of upstream (the established weekly habit).
+git push -q origin upstream/main:main 2>/dev/null || log "fork push skipped"
+
+changes=$(git log --oneline "$(git rev-parse HEAD^1)..upstream/main" 2>/dev/null | wc -l | tr -d ' ')
+write_status ok "Updated with $changes OpenMAIC changes"
+log "=== update done ($changes upstream commits) ==="
+notify "Sensei updated overnight ($changes improvements from OpenMAIC). Everything passed its checks."
