@@ -307,6 +307,10 @@ async function studyLecture(
       });
   }
 
+  // Calculation practice for any formula whose concept is now taught.
+  const { syncCalcCards } = await import('./calc/unlock');
+  await syncCalcCards(db);
+
   const concepts = await conceptsNeedingCards(db, lectureId);
   for (const [i, id] of concepts.entries()) {
     await progress(db, jobId, 'cards', at(0.87 + 0.05 * (i / Math.max(1, concepts.length))), `Making review cards — ${i + 1} of ${concepts.length}`);

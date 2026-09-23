@@ -1314,3 +1314,34 @@ a.s-row:active,
 .s-switch[data-on='1'] span {
   transform: translateX(20px);
 }
+
+/* Calculations */
+.s-calc-input {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--fill);
+}
+.s-calc-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  color: var(--label);
+  font: inherit;
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.s-steps-list {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 6px;
+  font-size: 16px;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+}

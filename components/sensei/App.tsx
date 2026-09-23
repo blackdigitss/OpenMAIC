@@ -4,7 +4,8 @@ import { AnimatePresence } from 'motion/react';
 import { useEffect } from 'react';
 
 import { ConceptSheetBody } from './ConceptSheet';
-import { LibraryIcon, ReviewIcon, TodayIcon } from './icons';
+import { CalcDrill } from './Calc';
+import { CloseIcon, LibraryIcon, ReviewIcon, TodayIcon } from './icons';
 import { Library, LecturePage } from './Library';
 import { Player } from './Player';
 import { ReviewSession, ReviewTab } from './Review';
@@ -94,6 +95,16 @@ function Shell() {
           <Sheet key="sheet" onClose={closeSheets} playerPad={!!track}>
             {top.kind === 'concept' ? (
               <ConceptSheetBody key={`${top.id}-${sheets.length}`} id={top.id} canGoBack={sheets.length > 1} onBack={popSheet} onClose={closeSheets} />
+            ) : top.kind === 'calc' ? (
+              <>
+                <div className="s-sheet-bar">
+                  <span />
+                  <button aria-label="Close" onClick={closeSheets} style={{ width: 30, height: 30 }}>
+                    <CloseIcon />
+                  </button>
+                </div>
+                <CalcDrill formulaId={top.formulaId} />
+              </>
             ) : top.kind === 'add' ? (
               <AddLectureSheet onClose={closeSheets} />
             ) : (
