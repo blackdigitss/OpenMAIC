@@ -10,6 +10,7 @@ import type { Db } from './db/types';
 import { CardState, retrievability, schedule, type CardMemory, type Rating } from './fsrs';
 import type { StructuredLlm } from './llm';
 import { normalizeStatement } from './normalize';
+import { TASK_CODES, TASKS } from './board/outline';
 import { sha256 } from './store';
 
 export const CARD_PROMPT_VERSION = 'cards-v1';
@@ -17,6 +18,7 @@ export const CARD_PROMPT_VERSION = 'cards-v1';
 const CardsSchema = z.object({
   durability: z.enum(['core', 'module']).describe('core = will keep mattering after this module; module = tested in this module only'),
   durability_reason: z.string().describe('One short sentence'),
+  board_tasks: z.array(z.enum(TASK_CODES)).max(3).describe('NBRC RT Exam Portion A tasks this concept serves (0–3)'),
   cards: z.array(
     z.object({
       competency: z.enum(['recall', 'explain', 'apply']),
@@ -36,7 +38,10 @@ const CARDS_SYSTEM = `You write spaced-repetition review cards for a respiratory
 Also classify the concept's durability. The program is taught in 5-week modules; after a module ends, its specific details are no longer examined, but foundational knowledge keeps being used.
 - "core": calculations and formulas (e.g. cylinder duration factors), normal values, patient safety, clinical assessment and decision-making, how equipment is used at the bedside, physiology later topics build on, anything likely on NBRC board exams.
 - "module": module-specific detail unlikely to matter again — industrial or manufacturing processes (e.g. fractional distillation of liquid oxygen), bulk storage infrastructure specifics, history, organizational trivia.
-When unsure, choose "core".`;
+When unsure, choose "core".
+
+Also tag the concept with 0–3 NBRC RT Exam (2027) Portion A tasks it serves:
+${TASKS.map((t) => `${t.code} ${t.title}: ${t.covers}`).join('\n')}`;
 
 /** Concepts that have taught (not foreshadow-only) live records but no cards yet. */
 export async function conceptsNeedingCards(db: Db, lectureId?: string): Promise<string[]> {
@@ -75,6 +80,9 @@ export async function generateCards(db: Db, llm: StructuredLlm, conceptId: strin
     tier: 'fast',
     purpose: 'cards',
   });
+  for (const code of out.board_tasks) {
+    await db.query('INSERT INTO sensei_concept_board (concept_id, task_code) VALUES ($1, $2) ON CONFLICT DO NOTHING', [conceptId, code]);
+  }
   // Keep the student's own choice; otherwise record the model's classification.
   await db.query(
     `UPDATE sensei_concept SET durability = $2, durability_by = 'model', durability_reason = $3
@@ -107,6 +115,8 @@ export interface DueCard {
   isNew: boolean;
   /** Set for calculation cards: the problem is generated fresh from this formula. */
   formulaId: string | null;
+  /** Set for case cards: a new scenario is generated from this family. */
+  caseFamily: string | null;
 }
 
 function toMemory(r: Record<string, unknown>): CardMemory {
@@ -146,6 +156,7 @@ export async function dueCards(db: Db, opts: { limit?: number; newLimit?: number
     memory: toMemory(r),
     isNew: Number(r.state) === CardState.New,
     formulaId: (r.formula_id as string) ?? null,
+    caseFamily: (r.case_family as string) ?? null,
   }));
 }
 

@@ -11,7 +11,8 @@ export type SheetEntry =
   | { kind: 'add' }
   | { kind: 'settings' }
   | { kind: 'lesson'; url: string; title: string }
-  | { kind: 'calc'; formulaId: string };
+  | { kind: 'calc'; formulaId: string }
+  | { kind: 'case'; family: string };
 
 export interface PlayerTrack {
   sourceId: string;

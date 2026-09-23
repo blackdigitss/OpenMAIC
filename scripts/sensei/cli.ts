@@ -87,6 +87,15 @@ async function main() {
       console.log(`SENSEI_VAPID_PUBLIC=${k.publicKey}\nSENSEI_VAPID_PRIVATE=${k.privateKey}`);
       break;
     }
+    case 'board-tags': {
+      // Tag concepts that predate board tagging, and create any calc/case cards now unlocked.
+      const { backfillBoardTags } = await import('@/lib/sensei/board/tagging');
+      const { geminiLlm } = await import('@/lib/sensei/llm');
+      const { syncCalcCards } = await import('@/lib/sensei/calc/unlock');
+      const { syncCaseCards } = await import('@/lib/sensei/cases/unlock');
+      console.log(`Tagged ${await backfillBoardTags(db, geminiLlm())} concepts; +${await syncCalcCards(db)} calc and +${await syncCaseCards(db)} case cards.`);
+      break;
+    }
     case 'stats': {
       const { stats } = await import('@/lib/sensei/queries');
       console.log(await stats(db));
