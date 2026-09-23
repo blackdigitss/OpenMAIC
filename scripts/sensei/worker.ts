@@ -34,8 +34,11 @@ async function main() {
   };
 
   const seen = new Map<string, number>();
-  const processed = join(config.inboxDir, '.processed');
-  await mkdir(processed, { recursive: true }).catch((e) => log(`inbox unavailable: ${e.message}`));
+  // Move out of iCloud into local staging: iCloud may evict files to placeholders later,
+  // and lecture audio shouldn't use iCloud storage twice. The job deletes staging once
+  // the file is safely in the content-addressed library.
+  const processed = join(config.home, 'staging');
+  await mkdir(processed, { recursive: true });
 
   async function scanInbox() {
     const names = await readdir(config.inboxDir).catch(() => [] as string[]);

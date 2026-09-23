@@ -13,7 +13,8 @@ live=$(readlink "$CURRENT")
 [ "$live" = "$SLOT_A" ] && idle="$SLOT_B" || idle="$SLOT_A"
 
 if [ "$1" = "rollback" ]; then
-  [ -d "$idle/.next" ] || { log "rollback: no previous build"; exit 1; }
+  # Only a slot that passed its smoke test is a valid rollback target.
+  [ -f "$idle/.sensei-good" ] || { log "rollback: no verified previous build"; notify "Sensei can't roll back: there is no verified previous version."; exit 1; }
   ln -sfn "$idle" "$CURRENT"
   launchctl kickstart -k "gui/$UID/com.sensei.app"; launchctl kickstart -k "gui/$UID/com.sensei.worker"
   write_status ok "Rolled back to the previous version"
@@ -40,9 +41,10 @@ if git merge-base --is-ancestor upstream/main sensei && [ "$1" != "--force" ]; t
 fi
 
 # Never swap builds while a lecture or a lesson is being generated.
-if psql -d sensei -Atc "select count(*) from sensei_job where status='running'" 2>/dev/null | grep -qv '^0$'; then
-  fail "a lecture is being processed; will try again next time."
-fi
+db=$(envget SENSEI_DATABASE_URL)
+running=$(psql "${db:-sensei}" -Atc "select count(*) from sensei_job where status='running'" 2>/dev/null) || fail "couldn't reach the database."
+[ "$running" = 0 ] || fail "a lecture is being processed; will try again next time."
+
 if grep -l '"status": *"running"' "$LIB/openmaic-data/classroom-jobs/"*.json >/dev/null 2>&1; then
   fail "a lesson is being generated; will try again next time."
 fi
@@ -52,8 +54,11 @@ if [ ! -d "$idle/.git" ] && [ ! -f "$idle/.git" ]; then
   git worktree add -q --detach "$idle" sensei || fail "couldn't create the build folder."
 fi
 cd "$idle" || fail "build folder missing."
+[ "$idle" = "$DEV" ] && fail "refusing to build in the development folder."
+rm -f "$idle/.sensei-good"
 git reset -q --hard && git clean -qfd -e node_modules -e .next
 git checkout -q --detach sensei || fail "couldn't check out sensei."
+base=$(git rev-parse sensei)
 if ! git merge -q --no-edit upstream/main -m "Merge upstream OpenMAIC $(git rev-parse --short upstream/main)"; then
   files=$(git diff --name-only --diff-filter=U | head -5 | tr '\n' ' ')
   git merge --abort
@@ -81,10 +86,12 @@ kill $smoke 2>/dev/null; wait $smoke 2>/dev/null
 [ $ok = 1 ] && [ "$code" = 200 ] || fail "the new version didn't start correctly."
 
 # Swap and restart.
+git rev-parse HEAD > "$idle/.sensei-good"
 ln -sfn "$idle" "$CURRENT"
 launchctl kickstart -k "gui/$UID/com.sensei.app"
 launchctl kickstart -k "gui/$UID/com.sensei.worker"
-git update-ref refs/heads/sensei HEAD
+# Advance the branch only if nobody committed to it during the build.
+git update-ref refs/heads/sensei HEAD "$base" || log "sensei branch moved during the update; left unchanged"
 # Keep the fork's main a clean mirror of upstream (the established weekly habit).
 git push -q origin upstream/main:main 2>/dev/null || log "fork push skipped"
 

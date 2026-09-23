@@ -89,8 +89,17 @@ export function ReviewSession() {
     setReviewed((n) => n + 1);
     if (rating === 1) setAgain((a) => [...a, card]);
     setI((n) => n + 1);
-    const res = await api<{ remediated: string[] }>('review', { method: 'POST', body: JSON.stringify({ cardId: card.id, rating }) });
-    if (res.remediated?.length) toast(`Added a refresher on ${res.remediated[0]}`);
+    // Retry on a flaky connection so a rating is never silently lost.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await api<{ remediated: string[] }>('review', { method: 'POST', body: JSON.stringify({ cardId: card.id, rating }) });
+        if (res.remediated?.length) toast(`Added a refresher on ${res.remediated[0]}`);
+        return;
+      } catch {
+        await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+      }
+    }
+    toast('Couldn’t save that rating. Check your connection.');
   };
 
   const close = () => {

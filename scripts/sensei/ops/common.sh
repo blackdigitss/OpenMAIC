@@ -1,14 +1,15 @@
 #!/bin/zsh
 # Shared paths for Sensei operations. Layout (all under the Sensei folder):
-#   OpenMAIC-sensei/   build slot A (git worktree, detached at the sensei branch)
-#   .sensei-b/         build slot B (created by the first update)
+#   OpenMAIC-sensei/   development worktree (branch sensei); never served, never reset
+#   .sensei-a/ .sensei-b/  build slots (detached worktrees) the updater alternates between
 #   .current           symlink → the live slot; launchd services run from here
 #   Library/           everything that must survive updates: files, cache, backups,
 #                      openmaic-data (classrooms + jobs), logs, status
 #   sensei.env         the one settings file (keys, access code); linked into each slot as .env.local
 
 export SENSEI_ROOT="${SENSEI_ROOT:-$HOME/Documents/Claude MacOs/Sensei}"
-export SLOT_A="$SENSEI_ROOT/OpenMAIC-sensei"
+export DEV="$SENSEI_ROOT/OpenMAIC-sensei"
+export SLOT_A="$SENSEI_ROOT/.sensei-a"
 export SLOT_B="$SENSEI_ROOT/.sensei-b"
 export CURRENT="$SENSEI_ROOT/.current"
 export LIB="$SENSEI_ROOT/Library"
@@ -23,12 +24,17 @@ mkdir -p "$LOGS" "$LIB/openmaic-data"
 log() { print -r -- "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 # iMessage to the student's phone when SENSEI_NOTIFY_IMESSAGE is set in sensei.env.
+envget() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-; }
+
 notify() {
   local handle
-  handle=$(grep -E '^SENSEI_NOTIFY_IMESSAGE=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+  handle=$(envget SENSEI_NOTIFY_IMESSAGE)
   log "notify: $1"
   [ -z "$handle" ] && return 0
-  osascript -e "tell application \"Messages\" to send \"$1\" to participant \"$handle\" of (1st account whose service type = iMessage)" >/dev/null 2>&1 || true
+  # Text passed as argv, never spliced into AppleScript source.
+  osascript -e 'on run argv' \
+    -e 'tell application "Messages" to send (item 1 of argv) to participant (item 2 of argv) of (1st account whose service type = iMessage)' \
+    -e 'end run' -- "$1" "$handle" >/dev/null 2>&1 || true
 }
 
 write_status() { # state message

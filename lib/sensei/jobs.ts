@@ -4,6 +4,8 @@
  * so a crashed or retried job simply runs again from the top at little cost.
  */
 import { execFile } from 'child_process';
+import { readFile, rm } from 'fs/promises';
+import { dirname, relative } from 'path';
 import { promisify } from 'util';
 import { z } from 'zod';
 
@@ -14,7 +16,7 @@ import { conceptsNeedingCards, generateCards } from './learn';
 import { buildLessonBrief, generateClassroom } from './lesson';
 import type { StructuredLlm } from './llm';
 import { processLecture } from './pipeline';
-import { linkLectureSource, loadUnits } from './store';
+import { insertUnits, linkLectureSource, loadUnits, sha256 } from './store';
 import { spotCheckNumbers, transcribeLecture } from './transcribe';
 
 const run = promisify(execFile);
@@ -69,6 +71,12 @@ export function localDate(d: Date): string {
 }
 
 export async function setJobCourse(db: Db, jobId: string, courseCode: string): Promise<void> {
+  // If a lecture was already created under the wrong class, move it too.
+  await db.query(
+    `UPDATE sensei_lecture l SET course_id = c.id FROM sensei_job j, sensei_course c
+      WHERE j.id = $1 AND l.id = j.lecture_id AND c.code = $2`,
+    [jobId, courseCode],
+  );
   await db.query(
     `UPDATE sensei_job SET input = jsonb_set(input, '{courseCode}', to_jsonb($2::text)), status = 'queued',
             detail = 'Waiting to start', updated_at = now()
@@ -126,7 +134,8 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
     // 1. Ingest every file into the library and the lecture.
     await progress(db, job.id, 'ingest', 0.02, 'Saving your files');
     const { rows: prior } = await db.query<{ lecture_id: string | null }>('SELECT lecture_id FROM sensei_job WHERE id = $1', [job.id]);
-    let lectureId = prior[0]?.lecture_id ?? '';
+    // A recording or transcript Sensei already has belongs to its existing lecture (re-sent file).
+    let lectureId = prior[0]?.lecture_id ?? (await lectureOwningFiles(db, input.files)) ?? '';
     const audio: { sourceId: string; path: string }[] = [];
     for (const path of input.files) {
       const r = await ingestFile(
@@ -143,12 +152,12 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
     await db.query('UPDATE sensei_job SET lecture_id = $2 WHERE id = $1', [job.id, lectureId]);
 
     // 2. Slides: this lecture's deck, or the course's newest deck (A17).
-    const deck = await ensureDeck(db, lectureId);
+    const deckInfo = await ensureDeck(db, lectureId);
+    const deck = deckInfo?.id ?? null;
 
     // 3. Transcribe audio that has no transcript yet.
     for (const a of audio) {
-      const { rows: existing } = await db.query('SELECT 1 FROM sensei_source WHERE derived_from = $1', [a.sourceId]);
-      if (existing.length) continue;
+      if (await restoreTranscript(db, a.sourceId)) continue;
       const slides = deck ? await deckWindow(db, lectureId, deck) : [];
       const t = await transcribeLecture(
         db, llm,
@@ -159,6 +168,14 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
         config,
       );
       if (deck) await inferSlideRange(db, lectureId, t.sourceId);
+    }
+    // An automatically attached multi-week deck only counts once we know which pages this
+    // class covered; otherwise its every page would be credited to today (recurrence inflation).
+    if (deckInfo?.auto) {
+      const { rows: r } = await db.query<{ slide_from: number | null }>('SELECT slide_from FROM sensei_lecture WHERE id = $1', [lectureId]);
+      if (r[0]?.slide_from == null) {
+        await db.query('DELETE FROM sensei_lecture_source WHERE lecture_id = $1 AND source_id = $2', [lectureId, deckInfo.id]);
+      }
     }
 
     // 4. Extract knowledge.
@@ -223,6 +240,7 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
       `UPDATE sensei_job SET status = 'succeeded', step = 'done', progress = 1, detail = $2, result = $3, updated_at = now() WHERE id = $1`,
       [job.id, `${report.recordsWritten} facts · ${report.conceptsCreated} new concepts`, JSON.stringify(report)],
     );
+    await cleanupInputs(input.files, config.home);
     const { rows: l } = await db.query<{ title: string }>('SELECT title FROM sensei_lecture WHERE id = $1', [lectureId]);
     await deps.notify?.(`Sensei: “${l[0]?.title}” is ready — ${report.conceptsCreated} new concepts, lesson waiting.`);
   } catch (error) {
@@ -235,14 +253,61 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
   }
 }
 
-/** The lecture's slides source; if none was uploaded, link the course's most recent deck. */
-async function ensureDeck(db: Db, lectureId: string): Promise<string | null> {
+/**
+ * Once a job succeeds, its inputs are safely in the library (content-addressed and
+ * hash-verified), so the upload/staging copies are removed. Files outside Sensei's own
+ * uploads/ and staging/ folders (e.g. added with the CLI) are never touched.
+ */
+async function cleanupInputs(files: string[], home: string) {
+  for (const f of files) {
+    const rel = relative(home, f);
+    if (rel.startsWith('uploads/')) await rm(dirname(f), { recursive: true, force: true });
+    else if (rel.startsWith('staging/')) await rm(f, { force: true });
+  }
+}
+
+/** Lecture already holding any of these files (by content hash), if one exists. */
+async function lectureOwningFiles(db: Db, files: string[]): Promise<string | null> {
+  for (const f of files) {
+    const hash = sha256(await readFile(f).catch(() => Buffer.alloc(0)));
+    const { rows } = await db.query<{ lecture_id: string }>(
+      `SELECT ls.lecture_id FROM sensei_source s JOIN sensei_lecture_source ls ON ls.source_id = s.id
+        WHERE s.sha256 = $1 AND s.kind IN ('audio','transcript') ORDER BY s.created_at LIMIT 1`,
+      [hash],
+    );
+    if (rows[0]) return rows[0].lecture_id;
+  }
+  return null;
+}
+
+/**
+ * True if the audio already has a complete transcript. A transcript whose units were only
+ * partly written (crash mid-insert) is completed from its saved JSON instead of skipped.
+ */
+async function restoreTranscript(db: Db, audioSourceId: string): Promise<boolean> {
+  const { rows } = await db.query<{ id: string; stored_path: string; expected: string | null; have: string }>(
+    `SELECT s.id, s.stored_path, s.metadata->>'segments' AS expected,
+            (SELECT count(*) FROM sensei_source_unit u WHERE u.source_id = s.id) AS have
+       FROM sensei_source s WHERE s.derived_from = $1 ORDER BY s.created_at DESC LIMIT 1`,
+    [audioSourceId],
+  );
+  const t = rows[0];
+  if (!t) return false;
+  if (t.expected != null && Number(t.have) < Number(t.expected)) {
+    const saved = JSON.parse(await readFile(t.stored_path, 'utf8')) as { units: Parameters<typeof insertUnits>[2] };
+    await insertUnits(db, t.id, saved.units);
+  }
+  return true;
+}
+
+/** The lecture's slides source; if none was uploaded, link the course's most recent deck (auto). */
+async function ensureDeck(db: Db, lectureId: string): Promise<{ id: string; auto: boolean } | null> {
   const { rows: own } = await db.query<{ id: string }>(
     `SELECT s.id FROM sensei_lecture_source ls JOIN sensei_source s ON s.id = ls.source_id
       WHERE ls.lecture_id = $1 AND s.kind = 'slides' ORDER BY s.created_at DESC LIMIT 1`,
     [lectureId],
   );
-  if (own[0]) return own[0].id;
+  if (own[0]) return { id: own[0].id, auto: false };
   const { rows } = await db.query<{ id: string }>(
     `SELECT s.id FROM sensei_source s JOIN sensei_lecture l ON l.course_id = s.course_id
       WHERE l.id = $1 AND s.kind = 'slides' ORDER BY s.created_at DESC LIMIT 1`,
@@ -250,7 +315,7 @@ async function ensureDeck(db: Db, lectureId: string): Promise<string | null> {
   );
   if (!rows[0]) return null;
   await linkLectureSource(db, lectureId, rows[0].id);
-  return rows[0].id;
+  return { id: rows[0].id, auto: true };
 }
 
 /** Candidate slides for a lecture: its set range, else the ~60 pages after where the last lecture on this deck stopped. */

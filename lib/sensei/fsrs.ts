@@ -14,7 +14,7 @@ const DECAY = -0.5;
 const FACTOR = 19 / 81; // 0.9^(1/DECAY) - 1
 
 export type Rating = 1 | 2 | 3 | 4; // Again, Hard, Good, Easy
-export const CardState = { New: 0, Review: 2, Relearning: 3 } as const;
+export const CardState = { New: 0, Learning: 1, Review: 2, Relearning: 3 } as const;
 
 export interface CardMemory {
   stability: number;
@@ -61,7 +61,8 @@ function recallStability(w: number[], d: number, s: number, r: number, g: Rating
 
 function forgetStability(w: number[], d: number, s: number, r: number) {
   const sf = w[11] * Math.pow(d, -w[12]) * (Math.pow(s + 1, w[13]) - 1) * Math.exp(w[14] * (1 - r));
-  return Math.min(sf, s);
+  // As in ts-fsrs: post-lapse stability never exceeds what a same-day relearn would give.
+  return Math.min(sf, s / Math.exp(w[17] * w[18]));
 }
 
 function shortTermStability(w: number[], s: number, g: Rating) {
@@ -91,8 +92,13 @@ export function schedule(card: CardMemory, rating: Rating, now = new Date(), w =
     stability,
     difficulty,
     reps: card.reps + 1,
-    lapses: card.lapses + (lapsed && card.state !== CardState.New ? 1 : 0),
-    state: lapsed ? (card.state === CardState.New ? CardState.New : CardState.Relearning) : CardState.Review,
+    // A lapse is forgetting a card you had learned; failing again while relearning isn't a new one.
+    lapses: card.lapses + (lapsed && card.state === CardState.Review ? 1 : 0),
+    state: lapsed
+      ? card.state === CardState.Review || card.state === CardState.Relearning
+        ? CardState.Relearning
+        : CardState.Learning
+      : CardState.Review,
     lastReview: now,
     due,
     retrievability: r,

@@ -367,13 +367,17 @@ export async function supersedeStale(db: Db, lectureId: string, runId: string): 
       RETURNING old.id`,
     [lectureId, runId],
   );
+  return { evidence: ev.rows.length, records: await supersedeOrphans(db) };
+}
+
+/** Records left with no live evidence anywhere are superseded (never deleted). */
+export async function supersedeOrphans(db: Db): Promise<number> {
   const rec = await db.query<{ id: string }>(
     `UPDATE sensei_knowledge_record r SET superseded_at = now()
       WHERE r.superseded_at IS NULL
         AND r.verification NOT IN ('human_confirmed')
-        AND EXISTS (SELECT 1 FROM sensei_record_evidence e WHERE e.record_id = r.id)
         AND NOT EXISTS (SELECT 1 FROM sensei_record_evidence e WHERE e.record_id = r.id AND e.superseded_at IS NULL)
       RETURNING r.id`,
   );
-  return { evidence: ev.rows.length, records: rec.rows.length };
+  return rec.rows.length;
 }

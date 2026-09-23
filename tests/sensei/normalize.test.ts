@@ -71,6 +71,15 @@ describe('numeric fidelity gate', () => {
     expect(checkNumericFidelity('This is one of the most tested concepts.', 'this shows up on every exam').ok).toBe(true);
   });
 
+  it('"one of" in a statement is not a number (no invented contradictions)', () => {
+    expect(numericSignature('PEEP is one of the first settings; start at 5 cmH2O')).toBe(numericSignature('Start PEEP at 5 cmH2O'));
+  });
+
+  it('reads compound spoken numbers and minutes', () => {
+    expect(checkNumericFidelity('A PaO2 of 150 mmHg.', 'a PaO2 of one hundred fifty millimeters of mercury').ok).toBe(true);
+    expect(checkNumericFidelity('Keep PEEP at 15 cmH2O.', 'set PEEP to 5 centimeters of water and recheck after 15 minutes').ok).toBe(false);
+  });
+
   it('numeric signatures differ when values change', () => {
     expect(numericSignature('Normal PaO2 is 80-100 mmHg')).not.toBe(numericSignature('Normal PaO2 is 75-100 mmHg'));
     expect(numericSignature('Normal PaO2 is 80-100 mmHg')).toBe(numericSignature('PaO2 normal range 80 to 100'));

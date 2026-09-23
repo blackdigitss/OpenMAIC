@@ -358,7 +358,8 @@ export interface FlaggedItem {
 /** At most `limit` high-stakes flagged facts awaiting a one-tap decision (A18). */
 export async function flaggedForReview(db: Db, limit = 3): Promise<FlaggedItem[]> {
   const { rows } = await db.query<Record<string, unknown>>(
-    `SELECT DISTINCT ON (r.id) r.id, r.statement, r.verification_notes, c.id AS concept_id, c.canonical_name,
+    `SELECT * FROM (
+     SELECT DISTINCT ON (r.id) r.id, r.statement, r.verification_notes, c.id AS concept_id, c.canonical_name,
             e.quote, u.start_ms, s.metadata->>'audioSourceId' AS audio_source_id, l.title, r.created_at
        FROM sensei_knowledge_record r
        JOIN sensei_concept c ON c.id = r.concept_id
@@ -367,11 +368,11 @@ export async function flaggedForReview(db: Db, limit = 3): Promise<FlaggedItem[]
        LEFT JOIN sensei_source s ON s.id = u.source_id
        LEFT JOIN sensei_lecture l ON l.id = e.lecture_id
       WHERE r.verification = 'flagged' AND r.superseded_at IS NULL AND r.reviewed_at IS NULL
-      ORDER BY r.id`,
+      ORDER BY r.id, u.start_ms NULLS LAST) x
+     ORDER BY x.created_at DESC LIMIT $1`,
+    [limit],
   );
   return rows
-    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
-    .slice(0, limit)
     .map((r) => ({
       recordId: r.id as string,
       conceptId: r.concept_id as string,

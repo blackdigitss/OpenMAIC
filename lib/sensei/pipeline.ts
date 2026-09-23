@@ -25,6 +25,7 @@ import {
   loadUnits,
   resolveConcept,
   startRun,
+  supersedeOrphans,
   supersedeStale,
   upsertRecord,
 } from './store';
@@ -39,6 +40,15 @@ export interface LectureRunReport {
   conceptsCreated: number;
   relations: number;
   superseded: { evidence: number; records: number };
+}
+
+/** The quoted passage within a unit, widened by ~80 characters each side (whole unit if not found). */
+export function quoteWindow(unitText: string, quote: string): string {
+  const hay = unitText.toLowerCase();
+  const needle = quote.toLowerCase().trim().slice(0, 40);
+  const at = needle ? hay.indexOf(needle) : -1;
+  if (at < 0) return unitText;
+  return unitText.slice(Math.max(0, at - 80), Math.min(unitText.length, at + quote.length + 80));
 }
 
 export async function lectureUnits(db: Db, lectureId: string): Promise<{ label: string; units: SourceUnit[] }> {
@@ -148,6 +158,7 @@ export async function processLecture(
   } catch (error) {
     // Partial output of a failed run must not sit alongside the last good run.
     await db.query(`UPDATE sensei_record_evidence SET superseded_at = now() WHERE run_id = $1`, [runId]);
+    await supersedeOrphans(db);
     await finishRun(db, runId, (error as Error).message);
     await db.query(`UPDATE sensei_lecture SET status = 'failed' WHERE id = $1`, [lectureId]);
     throw error;
@@ -185,8 +196,10 @@ export async function applyExtraction(db: Db, a: ApplyArgs): Promise<void> {
       continue;
     }
 
-    // Gate 2: numbers and units must match the source text exactly (A2).
-    const sourceText = evidence.map((e) => e.unit.text).join('\n');
+    // Gate 2: numbers and units must match the source exactly (A2) — checked against the
+    // quoted passage plus a little context, not the whole unit, so a "15" elsewhere in a
+    // long segment can't vouch for a wrong "15 cmH2O".
+    const sourceText = evidence.map((e) => quoteWindow(e.unit.text, e.quote)).join('\n');
     const notes: string[] = [];
     const numeric = checkNumericFidelity(rec.statement, sourceText);
     notes.push(...numeric.problems);
@@ -217,6 +230,8 @@ export async function applyExtraction(db: Db, a: ApplyArgs): Promise<void> {
       relation = 'contradicts';
       notes.push('numbers differ from an earlier lecture');
     }
+    // A repeat that failed its own fidelity gate must not lend its evidence to the earlier fact.
+    if (relation === 'duplicate' && notes.length > 0) relation = null;
 
     let recordId: string;
     if (existing && relation === 'duplicate') {

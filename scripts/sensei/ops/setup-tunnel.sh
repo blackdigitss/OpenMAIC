@@ -6,7 +6,19 @@
 source "${0:A:h}/common.sh"
 host="$1"
 [ -z "$host" ] && { echo "usage: setup-tunnel.sh <hostname, e.g. sensei.yourdomain.com>"; exit 2; }
-grep -qE '^ACCESS_CODE=.+' "$ENV_FILE" || { echo "Set ACCESS_CODE in $ENV_FILE first; the tunnel makes Sensei reachable from the internet."; exit 1; }
+code=$(envget ACCESS_CODE)
+if [ ${#code} -lt 20 ]; then
+  # Five random dictionary words: typed once per device, far too long to guess.
+  code=$(LC_ALL=C grep -E '^[a-z]{4,7}$' /usr/share/dict/words | sort -R | head -5 | paste -sd- -)
+  sed -i '' '/^#* *ACCESS_CODE=/d' "$ENV_FILE"
+  print "ACCESS_CODE=$code" >> "$ENV_FILE"
+  echo "Your Sensei access code (saved in sensei.env): $code"
+fi
+# Next reads settings at startup: restart so the gate is actually on before going public.
+launchctl kickstart -k "gui/$UID/com.sensei.app"; launchctl kickstart -k "gui/$UID/com.sensei.worker"
+for i in {1..60}; do curl -sf -o /dev/null http://127.0.0.1:3000/api/health && break; sleep 2; done
+gate=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/sensei/courses)
+[ "$gate" = 401 ] || { echo "Access code gate is not active (got $gate). Not opening the tunnel."; exit 1; }
 
 command -v cloudflared >/dev/null || brew install cloudflared || exit 1
 if [ ! -f "$HOME/.cloudflared/cert.pem" ]; then
@@ -22,7 +34,7 @@ tunnel: $id
 credentials-file: $HOME/.cloudflared/$id.json
 ingress:
   - hostname: $host
-    service: http://localhost:3000
+    service: http://127.0.0.1:3000
   - service: http_status:404
 CFG
 
@@ -41,4 +53,7 @@ PL
 launchctl bootout "gui/$UID/com.sensei.tunnel" 2>/dev/null
 launchctl bootstrap "gui/$UID" "$AGENTS/com.sensei.tunnel.plist"
 grep -q '^SENSEI_PUBLIC_URL=' "$ENV_FILE" && sed -i '' "s#^SENSEI_PUBLIC_URL=.*#SENSEI_PUBLIC_URL=https://$host#" "$ENV_FILE" || print "SENSEI_PUBLIC_URL=https://$host" >> "$ENV_FILE"
+sleep 8
+remote=$(curl -s -o /dev/null -w '%{http_code}' "https://$host/api/sensei/courses")
+[ "$remote" = 401 ] || echo "Warning: https://$host/api/sensei/courses returned $remote (expected 401). Check before using."
 echo "Done. On your iPhone open https://$host/sensei in Safari, enter your access code, then Share → Add to Home Screen."

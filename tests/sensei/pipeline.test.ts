@@ -272,6 +272,58 @@ describe('processLecture', () => {
     expect(links).toEqual([{ type: 'contradicts' }]);
   });
 
+  it('a run that fails after writing some windows leaves no evidence-less records behind', async () => {
+    const cues = Array.from({ length: 80 }, (_, i) => {
+      const t = (n: number) => `00:${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')}.000`;
+      return `${t(i * 30)} --> ${t(i * 30 + 29)}\nSegment ${i}: compliance is the change in volume over the change in pressure, repeated for length ${'x'.repeat(120)}.`;
+    }).join('\n\n');
+    const { lectureId } = await ingest(`WEBVTT\n\n${cues}\n`, 'RESP101', '2026-09-01', 'Long lecture');
+    const first = {
+      records: [
+        rec({
+          concept_name: 'Compliance',
+          statement: 'Compliance is the change in volume over the change in pressure.',
+          evidence: [{ unit_ref: 'U1', quote: 'compliance is the change in volume over the change in pressure' }],
+        }),
+      ],
+      relations: [],
+    };
+    await expect(processLecture(db, fakeLlm([first, new Error('quota exceeded')]), lectureId)).rejects.toThrow('quota');
+    const { rows } = await db.query<{ n: string }>(`SELECT count(*) AS n FROM sensei_knowledge_record WHERE superseded_at IS NULL`);
+    expect(Number(rows[0].n)).toBe(0);
+  });
+
+  it('a "duplicate" that fails its own number check does not lend evidence to the earlier fact', async () => {
+    const l1 = await ingest(LECTURE_1, 'RESP101', '2026-09-01', 'Oxygen basics');
+    await processLecture(db, fakeLlm([{ records: lecture1Extraction.records.slice(0, 1), relations: [] }]), l1.lectureId);
+    const l2 = await ingest(LECTURE_2, 'RESP102', '2026-09-08', 'Oxygen delivery');
+    await processLecture(
+      db,
+      fakeLlm([
+        (prompt) => ({
+          records: [
+            rec({
+              concept_ref: refFor(prompt, 'Fraction of inspired oxygen'),
+              concept_name: 'Fraction of inspired oxygen',
+              statement: 'Room air FiO2 is 0.21 (21%).',
+              evidence: [{ unit_ref: 'U1', quote: 'Remember FiO2 from last week' }], // this unit says nothing about 0.21
+              existing_record_ref: refFor(prompt, 'room air FiO2 is 0.21'),
+              existing_record_relation: 'duplicate',
+            }),
+          ],
+          relations: [],
+        }),
+      ]),
+      l2.lectureId,
+    );
+    const { rows } = await db.query<{ statement: string; lectures: string; verification: string }>(
+      `SELECT r.statement, r.verification, count(DISTINCT e.lecture_id) AS lectures FROM sensei_knowledge_record r
+         JOIN sensei_record_evidence e ON e.record_id = r.id AND e.superseded_at IS NULL GROUP BY r.id ORDER BY r.created_at`,
+    );
+    expect(Number(rows[0].lectures)).toBe(1); // original fact did not gain lecture 2's bad evidence
+    expect(rows[1].verification).toBe('flagged');
+  });
+
   it('a failed run leaves the last good knowledge intact', async () => {
     const { lectureId } = await ingest(LECTURE_1, 'RESP101', '2026-09-01', 'Oxygen basics');
     await processLecture(db, fakeLlm([lecture1Extraction]), lectureId);

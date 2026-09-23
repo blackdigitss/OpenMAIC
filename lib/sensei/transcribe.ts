@@ -146,6 +146,8 @@ export function validateChunk(chunk: TranscriptChunk, offsetMs: number, chunkMs:
     grams.set(g, (grams.get(g) ?? 0) + 1);
   }
   if ([...grams.values()].some((n) => n >= 4)) problems.push('repetition loop detected');
+  const beyond = chunk.segments.filter((s) => (parseMmSs(s.start) ?? 0) > chunkMs + 5000).length;
+  if (beyond > chunk.segments.length * 0.2) problems.push('timestamps run past the clip (absolute times?)');
   const badTimes = problems.filter((p) => p.startsWith('bad timestamp')).length;
   if (badTimes > chunk.segments.length / 4) problems.push('too many bad timestamps');
   const fatal = problems.some((p) => !p.startsWith('bad timestamp')) || badTimes > chunk.segments.length / 4;
@@ -184,7 +186,7 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
         const out = await llm.call({
           schema: TranscriptChunkSchema,
           system: TRANSCRIBE_SYSTEM,
-          prompt: `Clip ${i + 1} of ${chunks.length} (${Math.round(from / 60)}–${Math.round(to / 60)} min of the lecture).${attempt ? ' Previous attempt was rejected; be careful with timestamps and do not repeat text.' : ''}\n\n<slides>\n${slideContext || '(no slides)'}\n</slides>`,
+          prompt: `Clip ${i + 1} of ${chunks.length}. Timestamps start at 0:00 for THIS clip.${attempt ? ' Previous attempt was rejected; be careful with timestamps and do not repeat text.' : ''}\n\n<slides>\n${slideContext || '(no slides)'}\n</slides>`,
           tier: 'strong',
           file: { data, mediaType: 'audio/mpeg' },
         });
@@ -216,7 +218,7 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
   const source = await registerSource(db, {
     sha256: hash, kind: 'transcript', courseId: null, title: 'Transcript', originalName: 'transcript.json', storedPath,
     derivedFrom: prev[0]?.id ?? input.audioSourceId,
-    metadata: { durationSec: duration, chunks: chunks.length, warnings, audioSourceId: input.audioSourceId },
+    metadata: { durationSec: duration, chunks: chunks.length, segments: units.length, warnings, audioSourceId: input.audioSourceId },
   });
   await linkLectureSource(db, input.lectureId, source.id);
   await insertUnits(db, source.id, units);
@@ -235,15 +237,21 @@ const ClipSchema = z.object({ text: z.string() });
  * the record if the numbers don't survive the second hearing.
  */
 export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: string): Promise<{ checked: number; flagged: number }> {
-  const { rows } = await db.query<{ record_id: string; statement: string; start_ms: number; end_ms: number; audio_path: string }>(
-    `SELECT DISTINCT ON (r.id) r.id AS record_id, r.statement, u.start_ms, u.end_ms, audio.stored_path AS audio_path
+  // One clip per record spanning all of its cited segments; slide text it cites is kept so
+  // numbers that came from the slides aren't expected in the audio.
+  const { rows } = await db.query<{ record_id: string; statement: string; start_ms: number; end_ms: number; audio_path: string; slide_text: string | null }>(
+    `SELECT r.id AS record_id, r.statement, min(u.start_ms) AS start_ms, max(u.end_ms) AS end_ms,
+            min(audio.stored_path) AS audio_path,
+            (SELECT string_agg(pu.text, ' ') FROM sensei_record_evidence pe JOIN sensei_source_unit pu ON pu.id = pe.unit_id
+              WHERE pe.record_id = r.id AND pe.superseded_at IS NULL AND pu.kind = 'page') AS slide_text
        FROM sensei_record_evidence e
        JOIN sensei_knowledge_record r ON r.id = e.record_id
        JOIN sensei_source_unit u ON u.id = e.unit_id
        JOIN sensei_source t ON t.id = u.source_id
        JOIN sensei_source audio ON audio.id = (t.metadata->>'audioSourceId')::uuid
       WHERE e.lecture_id = $1 AND e.superseded_at IS NULL AND r.superseded_at IS NULL
-        AND r.verification = 'fidelity_ok' AND u.start_ms IS NOT NULL`,
+        AND r.verification = 'fidelity_ok' AND u.start_ms IS NOT NULL
+      GROUP BY r.id, r.statement`,
     [lectureId],
   );
   const dir = await mkdtemp(join(tmpdir(), 'sensei-clip-'));
@@ -252,6 +260,7 @@ export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: st
   try {
     for (const row of rows) {
       if (extractQuantities(row.statement, { spokenWords: false }).length === 0) continue;
+      if (row.slide_text && checkNumericFidelity(row.statement, row.slide_text).ok) continue;
       const from = Math.max(0, row.start_ms / 1000 - 15);
       const to = row.end_ms / 1000 + 15;
       const data = await cutChunk(row.audio_path, from, to, join(dir, `${row.record_id}.mp3`));

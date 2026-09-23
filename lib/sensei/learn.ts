@@ -136,11 +136,13 @@ export async function reviewCard(db: Db, cardId: string, rating: Rating, now = n
   if (!rows[0]) throw new Error('Card not found');
   const before = toMemory(rows[0]);
   const next = schedule(before, rating, now);
-  await db.query(
+  // Guard against a concurrent rating of the same card (double tap, retried POST).
+  const updated = await db.query(
     `UPDATE sensei_card SET due = $2, stability = $3, difficulty = $4, reps = $5, lapses = $6, state = $7, last_review = $8
-      WHERE id = $1`,
-    [cardId, next.due, next.stability, next.difficulty, next.reps, next.lapses, next.state, now],
+      WHERE id = $1 AND last_review IS NOT DISTINCT FROM $9 RETURNING id`,
+    [cardId, next.due, next.stability, next.difficulty, next.reps, next.lapses, next.state, now, rows[0].last_review ?? null],
   );
+  if (updated.rows.length === 0) return { due: next.due, intervalDays: next.intervalDays, remediated: [] };
   await db.query(
     `INSERT INTO sensei_review_log (card_id, rating, reviewed_at, stability_before, retrievability) VALUES ($1, $2, $3, $4, $5)`,
     [cardId, rating, now, before.stability, next.retrievability],
@@ -185,11 +187,11 @@ export async function conceptMastery(db: Db, conceptId: string, now = new Date()
     entry.cards++;
     entry.recall = rec == null ? entry.recall : Math.min(entry.recall ?? 1, rec);
   }
-  for (const e of Object.values(byCompetency)) e.level = levelFor(e.recall, rows.length);
+  for (const e of Object.values(byCompetency)) e.level = levelFor(e.recall);
   return byCompetency;
 }
 
-export function levelFor(recall: number | null, _cards: number): MasteryLevel {
+export function levelFor(recall: number | null): MasteryLevel {
   if (recall == null) return 'new';
   if (recall < 0.7) return 'shaky';
   if (recall < 0.85) return 'learning';

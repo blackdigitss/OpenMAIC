@@ -50,4 +50,23 @@ describe('FSRS-5', () => {
     expect(card.difficulty).toBeLessThanOrEqual(10);
     expect(card.difficulty).toBeGreaterThanOrEqual(1);
   });
+
+  it('a failed first review stays in learning, so the next Good gives a short interval (spec)', () => {
+    const t0 = new Date('2026-09-01T12:00:00Z');
+    const again = schedule(fresh, 1, t0);
+    expect(again.state).toBe(CardState.Learning);
+    const good = schedule(again, 3, new Date(t0.getTime() + 10 * 60_000));
+    expect(good.intervalDays).toBeLessThanOrEqual(1);
+    expect(good.lapses).toBe(0);
+  });
+
+  it('failing again while relearning does not count a second lapse', () => {
+    const first = schedule(fresh, 3, new Date('2026-09-01T12:00:00Z'));
+    const card: CardMemory = first;
+    const t = first.due;
+    const lapse = schedule(card, 1, t);
+    const again = schedule(lapse, 1, new Date(t.getTime() + 10 * 60_000));
+    expect(lapse.lapses).toBe(1);
+    expect(again.lapses).toBe(1);
+  });
 });

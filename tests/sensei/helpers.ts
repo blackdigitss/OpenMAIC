@@ -22,7 +22,7 @@ export async function testDb(): Promise<Db & { close(): Promise<void> }> {
 
 export async function testConfig() {
   const home = await mkdtemp(join(tmpdir(), 'sensei-'));
-  return { ...senseiConfig({ SENSEI_HOME: home } as NodeJS.ProcessEnv), googleApiKey: undefined };
+  return { ...senseiConfig({ SENSEI_HOME: home } as unknown as NodeJS.ProcessEnv), googleApiKey: undefined };
 }
 
 export async function writeFixture(name: string, content: string): Promise<string> {

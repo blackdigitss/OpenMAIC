@@ -238,9 +238,16 @@ async function streamAudio(req: NextRequest, sourceId?: string) {
   const ext = path.split('.').pop()?.toLowerCase();
   const type = ext === 'mp3' ? 'audio/mpeg' : ext === 'wav' ? 'audio/wav' : 'audio/mp4';
   const range = /bytes=(\d*)-(\d*)/.exec(req.headers.get('range') ?? '');
-  if (range) {
-    const start = range[1] ? Number(range[1]) : 0;
-    const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+  if (range && (range[1] || range[2])) {
+    // "bytes=-N" is the last N bytes; unsatisfiable ranges get 416, not a crash.
+    let start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    let end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (!range[1]) end = size - 1;
+    if (start >= size || start > end) {
+      return new NextResponse(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    }
+    start = Math.max(0, start);
+    end = Math.max(start, end);
     const stream = Readable.toWeb(createReadStream(path, { start, end })) as ReadableStream;
     return new NextResponse(stream, {
       status: 206,

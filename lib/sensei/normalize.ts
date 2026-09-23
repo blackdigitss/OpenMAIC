@@ -77,9 +77,16 @@ function digitizeWords(text: string): string {
     /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)[\s-](one|two|three|four|five|six|seven|eight|nine)\b/g,
     (_, tens: string, ones: string) => String(WORD_NUMBERS[tens] + WORD_NUMBERS[ones]),
   );
-  out = out.replace(/\b(one|two|three|four|five|six|seven|eight|nine)\s+hundred\b/g, (_, n: string) =>
-    String(WORD_NUMBERS[n] * 100),
+  // "one hundred fifty" → 150, "two thousand" → 2000
+  out = out.replace(
+    /\b(one|two|three|four|five|six|seven|eight|nine)\s+hundred(?:\s+(?:and\s+)?(\d+|[a-z]+(?:[\s-][a-z]+)?))?\b/g,
+    (whole, n: string, rest?: string) => {
+      const tail = rest == null ? 0 : /^\d+$/.test(rest) ? Number(rest) : WORD_NUMBERS[rest.split(/[\s-]/)[0]] != null
+        ? rest.split(/[\s-]/).reduce((t, w) => t + (WORD_NUMBERS[w] ?? 0), 0) : NaN;
+      return Number.isNaN(tail) ? String(WORD_NUMBERS[n] * 100) + whole.slice(whole.indexOf('hundred') + 7) : String(WORD_NUMBERS[n] * 100 + tail);
+    },
   );
+  out = out.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+thousand\b/g, (_, n: string) => String(WORD_NUMBERS[n] * 1000));
   out = out.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b/g,
     (w) => String(WORD_NUMBERS[w]),
   );
@@ -104,6 +111,8 @@ const UNIT_PATTERNS: [RegExp, string][] = [
   [/^(cm|centimeters?)\b/, 'cm'],
   [/^(l|liters?)\b/, 'l'],
   [/^(seconds?|secs?|s)\b/, 's'],
+  [/^(minutes?|mins?)\b/, 'min'],
+  [/^(hours?|hrs?|h)\b/, 'h'],
   [/^%/, '%'],
 ];
 
@@ -192,7 +201,8 @@ export function checkNumericFidelity(statement: string, evidence: string): Numer
 
 /** Sorted numeric token set, for "is this really a duplicate?" checks (A5). */
 export function numericSignature(text: string): string {
-  return [...new Set(extractQuantities(text).map((q) => q.value))].sort().join('|');
+  // Written statements: digits only, so "one of the first settings" is not the number 1.
+  return [...new Set(extractQuantities(text, { spokenWords: false }).map((q) => q.value))].sort().join('|');
 }
 
 /** Normalize a statement for content-keying (whitespace/case/punctuation-insensitive). */

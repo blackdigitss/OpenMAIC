@@ -9,8 +9,7 @@ AGENTS="$HOME/Library/LaunchAgents"
 OPS="$CURRENT/scripts/sensei/ops"
 mkdir -p "$AGENTS" "$LIB/backups"
 
-[ -L "$CURRENT" ] || ln -sfn "$SLOT_A" "$CURRENT"
-link_shared "$(readlink "$CURRENT")"
+[ -L "$CURRENT" ] || { echo "Run bootstrap-slot.sh first."; exit 1; }
 
 plist() { # label program-args-xml extra-xml
   cat > "$AGENTS/$1.plist" <<PL
