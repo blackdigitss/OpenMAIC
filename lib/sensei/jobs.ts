@@ -364,7 +364,12 @@ async function studyLecture(
 
   if (opts.audio.length) {
     await progress(db, jobId, 'verify', at(0.82), 'Double-checking numbers');
-    await spotCheckNumbers(db, llm, lectureId);
+    // A second listen for numbers; if its provider is out of credits, skip it rather than hold the lecture.
+    await spotCheckNumbers(db, llm, lectureId).catch(async (e: Error) => {
+      const { isProviderUnavailable } = await import('./llm');
+      if (!isProviderUnavailable(e) && !isBillingError(e.message)) throw e;
+      await progress(db, jobId, 'verify', at(0.84), 'Skipped the second listen for numbers (audio model unavailable)');
+    });
   }
 
   await progress(db, jobId, 'summarize', at(0.85), 'Writing the summary');
@@ -443,6 +448,7 @@ async function studyLecture(
         return generateClassroom(brief, { ...lessonOpts, model: backup });
       });
       await db.query('UPDATE sensei_lecture SET classroom_url = $2 WHERE id = $1', [lectureId, new URL(url).pathname]);
+      await recordNarrationUsage(new URL(url).pathname.split('/').pop() ?? '', lectureId).catch(() => undefined);
     }
   }
   return report;
@@ -576,4 +582,21 @@ export async function retranscribeLecture(db: Db, lectureId: string): Promise<st
     [lectureId],
   );
   return rows[0]?.id ?? null;
+}
+
+/**
+ * OpenMAIC records narration audio without logging usage, so Sensei logs the
+ * characters narrated (cloud voice only) to keep the budget honest.
+ */
+async function recordNarrationUsage(classroomId: string, lectureId: string): Promise<void> {
+  if (!process.env.TTS_OPENAI_API_KEY || !/^[\w-]+$/.test(classroomId)) return;
+  const { readClassroom } = await import('@/lib/server/classroom-storage');
+  const c = await readClassroom(classroomId);
+  const chars = (c?.scenes ?? [])
+    .flatMap((s) => (s as { actions?: { type: string; text?: string; audioUrl?: string }[] }).actions ?? [])
+    .filter((a) => a.type === 'speech' && a.audioUrl)
+    .reduce((n, a) => n + (a.text?.length ?? 0), 0);
+  if (!chars) return;
+  const { recordUsage } = await import('@/lib/server/usage-storage');
+  await recordUsage({ kind: 'tts', source: `sensei:narration:${lectureId}`, providerId: 'openai', modelId: 'gpt-4o-mini-tts', modelString: 'openai-tts:gpt-4o-mini-tts', quantity: chars, unit: 'character' });
 }

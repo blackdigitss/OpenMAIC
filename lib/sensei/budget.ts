@@ -5,7 +5,7 @@
  */
 import { readUsageRecords, type UsageRecord } from '@/lib/server/usage-storage';
 
-import { callCost, priceFor } from './pricing';
+import { callCost, priceFor, quantityCost } from './pricing';
 
 export const PURPOSE_LABEL: Record<string, string> = {
   transcribe: 'Transcribing recordings',
@@ -18,6 +18,7 @@ export const PURPOSE_LABEL: Record<string, string> = {
   gaps: 'Textbook gap-filling',
   reels: 'Professor reels',
   lessons: 'Tonight’s lessons (OpenMAIC)',
+  narration: 'Lesson narration (voice)',
   other: 'Other',
 };
 
@@ -48,10 +49,15 @@ export function summarize(records: UsageRecord[], now = new Date()): MonthSpend 
   const unknown = new Set<string>();
   let total = 0;
   for (const r of records) {
-    if (r.kind && r.kind !== 'llm') continue;
     const purpose = purposeOf(r.source);
-    const usd = callCost(r.modelId, r.inputTokens, r.outputTokens, purpose === 'transcribe' || purpose === 'verify');
-    if (!priceFor(r.modelId).known) unknown.add(r.modelId);
+    let usd: number;
+    if (r.kind && r.kind !== 'llm') {
+      // Transcription by the second, narration by the character.
+      usd = quantityCost(r.modelId, r.quantity ?? 0, r.unit);
+    } else {
+      usd = callCost(r.modelId, r.inputTokens, r.outputTokens, purpose === 'transcribe' || purpose === 'verify');
+      if (!priceFor(r.modelId).known) unknown.add(r.modelId);
+    }
     by.set(purpose, (by.get(purpose) ?? 0) + usd);
     total += usd;
     days.add(new Date(r.createdAt).toISOString().slice(0, 10));

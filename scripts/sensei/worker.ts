@@ -26,10 +26,15 @@ async function main() {
   const appUrl = process.env.SENSEI_APP_URL ?? 'http://localhost:3000';
   const { notifyStudent } = await import('@/lib/sensei/notify');
   // A provider out of credits falls through to the next model; say so once, not per call.
-  const llm = senseiLlm(config, (message) => {
-    log(message);
-    void notifyStudent(db, 'failures', { title: 'Sensei switched models', body: message, tag: 'model' }).catch(() => undefined);
-  });
+  const { briefProvider } = await import('@/lib/sensei/brief');
+  const llm = senseiLlm(
+    config,
+    (message) => {
+      log(message);
+      void notifyStudent(db, 'failures', { title: 'Sensei switched models', body: message, tag: 'model' }).catch(() => undefined);
+    },
+    briefProvider(db),
+  );
   const { getSettings, getState, setState } = await import('@/lib/sensei/settings');
   const notify = async (kind: 'ready' | 'failed', message: string) => {
     log(message);

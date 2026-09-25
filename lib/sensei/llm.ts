@@ -17,6 +17,7 @@ import { z } from 'zod';
 
 import { callLLM } from '@/lib/ai/llm';
 
+import { BRIEF_VERSION } from './brief';
 import { senseiConfig } from './config';
 import { sha256 } from './store';
 
@@ -188,7 +189,12 @@ function runClaude(bin: string, args: string[], prompt: string, cwd: string, tim
   });
 }
 
-export function senseiLlm(config = senseiConfig(), notify?: (message: string) => void): StructuredLlm {
+export function senseiLlm(
+  config = senseiConfig(),
+  notify?: (message: string) => void,
+  /** The standing Sensei brief (lib/sensei/brief.ts), prepended to every task's instructions. */
+  brief?: () => Promise<string>,
+): StructuredLlm {
   const spec = (tier: ModelTier) => (tier === 'fast' ? config.fastModel : tier === 'audio' ? config.audioModel : config.strongModel);
   const routesFor = (tier: ModelTier) => parseRoutes(spec(tier));
   const keyFor = (p: ModelRoute['provider']) =>
@@ -205,12 +211,15 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
       const live = routes.find((r) => keyFor(r.provider) && (unavailableUntil.get(r.provider) ?? 0) < Date.now()) ?? routes[0];
       return live.model;
     },
-    async call<T>(req: StructuredCall<T>): Promise<T> {
-      const routes = routesFor(req.tier);
+    async call<T>(original: StructuredCall<T>): Promise<T> {
+      const routes = routesFor(original.tier);
+      // Cache keys use the brief's version (not its dated line), so re-runs still hit the cache.
+      const keyReq = brief ? { ...original, system: `${BRIEF_VERSION}\n${original.system}` } : original;
+      const req = brief ? { ...original, system: `${await brief()}\n\n---\n\nYour task:\n${original.system}` } : original;
       // A cached answer from any route counts: re-runs never re-pay.
       for (const r of routes) {
         try {
-          return req.schema.parse(JSON.parse(await readFile(join(config.cacheDir, `${cacheKey(cacheModel(r), req)}.json`), 'utf8')).output);
+          return req.schema.parse(JSON.parse(await readFile(join(config.cacheDir, `${cacheKey(cacheModel(r), keyReq)}.json`), 'utf8')).output);
         } catch {
           // miss
         }
@@ -229,7 +238,7 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
           if (r.provider === 'claude') {
             const output = req.schema.parse(await claudeSubscriptionCall(config.claudeBin, r.model, req));
             await mkdir(config.cacheDir, { recursive: true });
-            await writeFile(join(config.cacheDir, `${cacheKey(cacheModel(r), req)}.json`), JSON.stringify({ model: cacheModel(r), at: new Date().toISOString(), output }));
+            await writeFile(join(config.cacheDir, `${cacheKey(cacheModel(r), keyReq)}.json`), JSON.stringify({ model: cacheModel(r), at: new Date().toISOString(), output }));
             return output;
           }
           const model = r.provider === 'openai' ? createOpenAI({ apiKey: key })(r.model) : createGoogleGenerativeAI({ apiKey: key })(r.model);
@@ -258,7 +267,7 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
           );
           const output = req.schema.parse(result.output);
           await mkdir(config.cacheDir, { recursive: true });
-          await writeFile(join(config.cacheDir, `${cacheKey(r.model, req)}.json`), JSON.stringify({ model: r.model, at: new Date().toISOString(), output }));
+          await writeFile(join(config.cacheDir, `${cacheKey(r.model, keyReq)}.json`), JSON.stringify({ model: r.model, at: new Date().toISOString(), output }));
           return output;
         } catch (e) {
           // The subscription is best effort: any failure there falls through to the paid API.

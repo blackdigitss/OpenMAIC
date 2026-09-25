@@ -9,7 +9,7 @@ import { join } from 'path';
 import { senseiConfig } from '../config';
 import type { Db } from '../db/types';
 import { sha256 } from '../store';
-import { stitch, whisperAvailable, wordsFor } from './audio';
+import { stitch, wordsForWindow } from './audio';
 import { clipSpan, locateQuote } from './boundaries';
 
 export interface Chapter {
@@ -87,7 +87,7 @@ export async function clipFor(db: Db, m: Moment, vocabulary: string[]) {
   let found: { start_ms: number; end_ms: number; text: string } | null = null;
   for (const pad of [30_000, 60_000]) {
     const from = Math.max(0, m.start_ms - pad);
-    const words = await wordsFor(m.audio_path, from, m.end_ms + pad, vocabulary);
+    const words = await wordsForWindow(db, m.audio_source_id, m.audio_path, from, m.end_ms + pad, vocabulary);
     const span = locateQuote(words, m.quote);
     if (!span) continue;
     const c = clipSpan(words, span);
@@ -122,7 +122,6 @@ export async function buildNextReel(db: Db, log: (m: string) => void = () => und
   const reel = rows[0];
   if (!reel) return false;
   try {
-    if (!(await whisperAvailable())) throw new Error('whisper.cpp is not installed (run ops/install-whisper.sh)');
     const moments = await momentsFor(db, reel.key);
     const { rows: vocab } = await db.query<{ canonical_name: string }>(
       `SELECT DISTINCT c.canonical_name FROM sensei_concept c WHERE c.id = ANY($1::uuid[])`,

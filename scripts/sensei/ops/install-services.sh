@@ -3,7 +3,7 @@
 #   com.sensei.app     web app on :3000, restarts if it stops
 #   com.sensei.worker  lecture worker, restarts if it stops
 #   com.sensei.gate    internet door on :3001 (3 code tries per device), used by the tunnel
-#   com.sensei.voice   lesson narration voice (Kokoro, local) on 127.0.0.1:13305
+#   com.sensei.voice   optional local narration voice (Kokoro) on 127.0.0.1:13305, only if SENSEI_LOCAL_VOICE=1
 #   com.sensei.bridge  Claude subscription as an OpenAI-style endpoint on 127.0.0.1:3002 (lessons)
 #   com.sensei.awake   keeps the Mac from sleeping (caffeinate), so evening pushes and nightly jobs run
 #   com.sensei.update  Sunday 3:00 zero-downtime update
@@ -38,7 +38,10 @@ arg() { print -r -- "<string>$1</string>"; }
 plist com.sensei.app "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg app)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
 plist com.sensei.worker "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg worker)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>15</integer>"
 plist com.sensei.gate "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg gate)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
-plist com.sensei.voice "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg voice)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
+# Optional local narration voice (uses the Mac's CPU): only when SENSEI_LOCAL_VOICE=1 in sensei.env.
+if [ "$(envget SENSEI_LOCAL_VOICE)" = 1 ]; then
+  plist com.sensei.voice "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg voice)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
+fi
 plist com.sensei.bridge "$(arg /bin/zsh)$(arg "$OPS/serve.sh")$(arg bridge)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>10</integer>"
 # Keep the Mac awake (idle + system sleep) without sudo, for as long as the service runs.
 plist com.sensei.awake "$(arg /usr/bin/caffeinate)$(arg -i)$(arg -s)$(arg -m)" "<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>"

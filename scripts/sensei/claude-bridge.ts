@@ -38,6 +38,16 @@ interface ChatRequest {
   response_format?: { type: string; json_schema?: { schema?: object } };
 }
 
+let briefText: (() => Promise<string>) | null = null;
+async function senseiBrief(): Promise<string> {
+  if (!briefText) {
+    const { senseiDb } = await import('@/lib/sensei/db/pool');
+    const { briefProvider } = await import('@/lib/sensei/brief');
+    briefText = briefProvider(await senseiDb());
+  }
+  return briefText().catch(async () => (await import('@/lib/sensei/brief')).SENSEI_BRIEF);
+}
+
 let running = 0;
 const waiting: (() => void)[] = [];
 async function slot<T>(fn: () => Promise<T>): Promise<T> {
@@ -85,7 +95,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method !== 'POST' || !url.endsWith('/chat/completions')) return send(res, 404, { error: { message: 'Not found' } });
   const body = JSON.parse(await readBody(req)) as ChatRequest;
   if (body.tools?.length) return send(res, 400, { error: { message: 'The Claude bridge does not support tool calls' } });
-  const { system, prompt } = toPrompt(body.messages ?? []);
+  const parts = toPrompt(body.messages ?? []);
+  // Lessons follow the same standing brief as the rest of Sensei (course, sources, rules).
+  const system = `${await senseiBrief()}\n\n---\n\nYour task:\n${parts.system}`;
+  const prompt = parts.prompt;
   const wantsJson = body.response_format?.type === 'json_schema' || body.response_format?.type === 'json_object';
   const schema = body.response_format?.json_schema?.schema;
   const { claudeCliComplete } = await import('@/lib/sensei/llm');

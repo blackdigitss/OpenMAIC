@@ -28,6 +28,17 @@ export const PRICES: [RegExp, Price][] = [
   [/gemini-2\.5-pro/, { input: 1.25, output: 10 }],
 ];
 
+/**
+ * Audio billed by quantity rather than tokens (OpenAI, checked 2026-09-25):
+ * whisper-1 transcription $0.006/minute; gpt-4o-mini-tts narration about
+ * $0.015/minute of speech, roughly 900 characters of text per minute.
+ */
+export function quantityCost(modelId: string, quantity: number, unit: string | undefined): number {
+  if (unit === 'second' && /whisper|transcribe/.test(modelId)) return (quantity / 60) * 0.006;
+  if (unit === 'character' && /tts/.test(modelId)) return (quantity / 900) * 0.015;
+  return 0;
+}
+
 /** Highest known rates (GPT-5.6 Sol), so an unknown model is never under-counted. */
 export const FALLBACK_PRICE: Price = { input: 5, output: 30 };
 
