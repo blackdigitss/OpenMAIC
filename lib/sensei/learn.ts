@@ -133,7 +133,7 @@ export interface McqPayload {
   note?: string;
 }
 
-export type CardPayload = McqPayload;
+export type CardPayload = McqPayload | import('./drills').OrderPayload;
 
 function toMemory(r: Record<string, unknown>): CardMemory {
   return {

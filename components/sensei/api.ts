@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 
 import type { ConceptDetail, GlossaryEntry, LectureDigest, LectureSummary, LectureUnitView, ModuleInfo, TermLink } from '@/lib/sensei/queries';
 import type { SenseiAnswer } from '@/lib/sensei/ask';
-import type { McqPayload } from '@/lib/sensei/learn';
+import type { CardPayload } from '@/lib/sensei/learn';
 
 export type { ConceptDetail, GlossaryEntry, LectureDigest, LectureSummary, LectureUnitView, ModuleInfo, TermLink, SenseiAnswer };
 
@@ -98,7 +98,7 @@ export interface ReviewCard {
   intervals: Record<1 | 2 | 3 | 4, string>;
   formulaId: string | null;
   caseFamily: string | null;
-  payload: McqPayload | null;
+  payload: CardPayload | null;
 }
 
 export interface CalcItem {
