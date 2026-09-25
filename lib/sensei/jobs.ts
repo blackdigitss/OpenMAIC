@@ -239,7 +239,7 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
       for (const path of recordings) {
         const r = await ingestFile(
           db,
-          { path, course: { code: input.courseCode }, lecture: { date: input.date!, title: input.title || 'New lecture', kind: 'session' }, lectureId: lectureId || undefined },
+          { path, course: { code: input.courseCode }, lecture: { date: input.date!, title: lectureId ? 'New lecture' : await sessionTitle(db, input, path), kind: 'session' }, lectureId: lectureId || undefined },
           config,
         );
         lectureId = r.lectureId;
@@ -265,12 +265,56 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
     await deps.notify?.('ready', `“${l[0]?.title}” is ready.`);
   } catch (error) {
     const message = (error as Error).message;
-    await db.query(`UPDATE sensei_job SET status = 'failed', error = $2, detail = 'Something went wrong', updated_at = now() WHERE id = $1`, [
-      job.id, message,
+    const billing = isBillingError(message);
+    await db.query(`UPDATE sensei_job SET status = 'failed', error = $2, detail = $3, updated_at = now() WHERE id = $1`, [
+      job.id,
+      message,
+      billing ? 'Waiting for AI credits (resumes on its own)' : 'Something went wrong',
     ]);
-    await deps.notify?.('failed', `Couldn’t finish a lecture: ${message.slice(0, 120)}. Open Sensei to retry.`);
+    // Out of credits is one problem, not one per lecture: say it once, clearly.
+    const { rows: others } = billing
+      ? await db.query(`SELECT 1 FROM sensei_job WHERE id <> $1 AND status = 'failed' AND detail LIKE 'Waiting for AI credits%' LIMIT 1`, [job.id])
+      : { rows: [] };
+    if (!billing) await deps.notify?.('failed', `Couldn’t finish a lecture: ${message.slice(0, 120)}. Open Sensei to retry.`);
+    else if (!others.length) {
+      await deps.notify?.('failed', 'Gemini is out of credits. Add credits in Google AI Studio; your lectures will finish on their own afterwards.');
+    }
     throw error;
   }
+}
+
+/** The AI provider refused for billing (credits, quota, prepay) rather than because of the lecture. */
+export function isBillingError(message: string): boolean {
+  return /prepayment credits|credits are depleted|no credits|insufficient_quota|exceeded your current quota|billing/i.test(message);
+}
+
+/**
+ * Lectures that stopped for billing are retried every 30 minutes; the first retry
+ * after credits are added finishes them (finished steps are cached, so no double pay).
+ */
+export async function retryBillingFailures(db: Db): Promise<number> {
+  const { rows } = await db.query(
+    `UPDATE sensei_job SET status = 'queued', detail = 'Retrying now that credits may be back', updated_at = now()
+      WHERE status = 'failed' AND detail LIKE 'Waiting for AI credits%' AND updated_at < now() - interval '30 minutes'
+      RETURNING id`,
+  );
+  return rows.length;
+}
+
+/**
+ * A new class session's title (replaced by a real one once it's summarized). Lecture and
+ * lab recorded the same day must stay separate sessions, so titles are made unique.
+ */
+async function sessionTitle(db: Db, input: JobInput, path: string): Promise<string> {
+  const base = input.title || titleFromFile(path) || 'Class';
+  const { rows } = await db.query<{ title: string }>(
+    `SELECT l.title FROM sensei_lecture l JOIN sensei_course c ON c.id = l.course_id WHERE c.code = $1 AND l.lecture_date = $2`,
+    [input.courseCode, input.date],
+  );
+  const taken = new Set(rows.map((r) => r.title));
+  let title = base;
+  for (let n = 2; taken.has(title); n++) title = `${base} (${n})`;
+  return title;
 }
 
 function deckTitle(path: string): string {

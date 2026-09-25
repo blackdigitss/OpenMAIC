@@ -140,3 +140,25 @@ describe('titles from file names', () => {
     expect(titleFromFile('/lib/f003bc5dda9d317ef213e190103644b5b78c5c73e7e97dee341a0061041d22d6.pdf')).toBeNull();
   });
 });
+
+describe('running out of AI credits', () => {
+  it('recognizes billing refusals, and retries only those jobs after 30 minutes', async () => {
+    const { isBillingError, retryBillingFailures } = await import('@/lib/sensei/jobs');
+    expect(isBillingError('Your prepayment credits are depleted. Please go to AI Studio')).toBe(true);
+    expect(isBillingError('You exceeded your current quota')).toBe(true);
+    expect(isBillingError('Transcript timestamps overlap')).toBe(false);
+    const { testDb } = await import('./helpers');
+    const db = await testDb();
+    try {
+      await db.query(`INSERT INTO sensei_job (status, input, detail, updated_at) VALUES
+        ('failed', '{"files":[]}', 'Waiting for AI credits (resumes on its own)', now() - interval '31 minutes'),
+        ('failed', '{"files":[]}', 'Waiting for AI credits (resumes on its own)', now()),
+        ('failed', '{"files":[]}', 'Something went wrong', now() - interval '2 hours')`);
+      expect(await retryBillingFailures(db)).toBe(1);
+      const { rows } = await db.query<{ status: string }>(`SELECT status FROM sensei_job ORDER BY status`);
+      expect(rows.map((r) => r.status)).toEqual(['failed', 'failed', 'queued']);
+    } finally {
+      await db.close();
+    }
+  });
+});
