@@ -7,8 +7,11 @@
  */
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
+import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import { Output } from 'ai';
 import { mkdir, readFile, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { z } from 'zod';
 
@@ -47,7 +50,8 @@ export class MissingApiKeyError extends Error {
 }
 
 export interface ModelRoute {
-  provider: 'google' | 'openai';
+  /** claude = your Claude subscription, through the Claude Code CLI on this Mac. */
+  provider: 'google' | 'openai' | 'claude';
   model: string;
 }
 
@@ -60,7 +64,7 @@ export function parseRoutes(spec: string): ModelRoute[] {
     .map((s) => {
       const i = s.indexOf(':');
       const provider = i > 0 ? s.slice(0, i) : 'google';
-      if (provider !== 'google' && provider !== 'openai') throw new Error(`Unknown model provider "${provider}" in "${s}"`);
+      if (provider !== 'google' && provider !== 'openai' && provider !== 'claude') throw new Error(`Unknown model provider "${provider}" in "${s}"`);
       return { provider, model: i > 0 ? s.slice(i + 1) : s };
     });
 }
@@ -84,10 +88,63 @@ export function isProviderUnavailable(e: unknown): boolean {
 const unavailableUntil = new Map<string, number>();
 const SKIP_MS = 30 * 60_000;
 
+const PROVIDER_NAMES: Record<ModelRoute['provider'], string> = { google: 'Gemini', openai: 'OpenAI', claude: 'Your Claude subscription' };
+
+/** JSON Schema for the CLI, without the draft tag it doesn't resolve. */
+function cliSchema(schema: z.ZodType): object {
+  const { $schema: _drop, ...rest } = z.toJSONSchema(schema) as Record<string, unknown>;
+  return rest;
+}
+
+/**
+ * One structured call through the Claude Code CLI, which bills your Claude plan
+ * instead of an API key. Runs lean: no tools, no settings, hooks, plugins or MCP
+ * servers, and no saved session, so each call carries ~1k tokens of overhead.
+ * Hitting the plan's usage limit reads as "provider unavailable" (falls through).
+ */
+export function claudeSubscriptionCall<T>(bin: string, model: string, req: StructuredCall<T>, timeoutMs = 15 * 60_000): Promise<unknown> {
+  const args = [
+    '-p', '--output-format', 'json', '--model', model, '--tools', '', '--no-session-persistence',
+    '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+    '--system-prompt', req.system, '--json-schema', JSON.stringify(cliSchema(req.schema)),
+  ];
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      let d: { is_error?: boolean; result?: string; structured_output?: unknown } | null = null;
+      try {
+        d = JSON.parse(out);
+      } catch {
+        // not JSON: report what the CLI said
+      }
+      const message = String(d?.result ?? err ?? '').trim() || `claude exited with code ${code}`;
+      if (!d || d.is_error || d.structured_output === undefined) {
+        const limited = /usage limit|limit reached|rate limit|out of (extra )?usage|credit|quota|not logged in|login|authenticat/i.test(message);
+        reject(Object.assign(new Error(`Claude subscription: ${message.slice(0, 200)}`), limited ? { statusCode: 429, message: `no credits: ${message.slice(0, 200)}` } : {}));
+        return;
+      }
+      resolve(d.structured_output);
+    });
+    child.stdin.end(req.prompt);
+  });
+}
+
 export function senseiLlm(config = senseiConfig(), notify?: (message: string) => void): StructuredLlm {
   const spec = (tier: ModelTier) => (tier === 'fast' ? config.fastModel : tier === 'audio' ? config.audioModel : config.strongModel);
   const routesFor = (tier: ModelTier) => parseRoutes(spec(tier));
-  const keyFor = (p: ModelRoute['provider']) => (p === 'openai' ? config.openaiApiKey : config.googleApiKey);
+  const keyFor = (p: ModelRoute['provider']) =>
+    p === 'openai' ? config.openaiApiKey : p === 'claude' ? (existsSync(config.claudeBin) ? 'subscription' : undefined) : config.googleApiKey;
+  const cacheModel = (r: ModelRoute) => (r.provider === 'claude' ? `claude-cli:${r.model}` : r.model);
   const cacheKey = (model: string, req: StructuredCall<unknown>) =>
     sha256(
       [model, req.system, req.prompt, JSON.stringify(z.toJSONSchema(req.schema)), req.file ? sha256(req.file.data) : ''].join('\n\u0000'),
@@ -104,7 +161,7 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
       // A cached answer from any route counts: re-runs never re-pay.
       for (const r of routes) {
         try {
-          return req.schema.parse(JSON.parse(await readFile(join(config.cacheDir, `${cacheKey(r.model, req)}.json`), 'utf8')).output);
+          return req.schema.parse(JSON.parse(await readFile(join(config.cacheDir, `${cacheKey(cacheModel(r), req)}.json`), 'utf8')).output);
         } catch {
           // miss
         }
@@ -117,9 +174,15 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
           lastError ??= new MissingApiKeyError(r.provider);
           continue;
         }
-        if (req.file && r.provider !== 'google') continue; // audio goes to Gemini
-        const model = r.provider === 'openai' ? createOpenAI({ apiKey: key })(r.model) : createGoogleGenerativeAI({ apiKey: key })(r.model);
+        if (req.file && r.provider !== 'google') continue; // audio and PDFs go to Gemini
         try {
+          if (r.provider === 'claude') {
+            const output = req.schema.parse(await claudeSubscriptionCall(config.claudeBin, r.model, req));
+            await mkdir(config.cacheDir, { recursive: true });
+            await writeFile(join(config.cacheDir, `${cacheKey(cacheModel(r), req)}.json`), JSON.stringify({ model: cacheModel(r), at: new Date().toISOString(), output }));
+            return output;
+          }
+          const model = r.provider === 'openai' ? createOpenAI({ apiKey: key })(r.model) : createGoogleGenerativeAI({ apiKey: key })(r.model);
           // Through OpenMAIC's wrapper: usage accounting and the thinking kill switch apply to Sensei too.
           const result = await callLLM(
             {
@@ -148,10 +211,12 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
           await writeFile(join(config.cacheDir, `${cacheKey(r.model, req)}.json`), JSON.stringify({ model: r.model, at: new Date().toISOString(), output }));
           return output;
         } catch (e) {
-          if (isLast || !isProviderUnavailable(e)) throw e;
+          // The subscription is best effort: any failure there falls through to the paid API.
+          if (isLast || (r.provider !== 'claude' && !isProviderUnavailable(e))) throw e;
           lastError = e;
+          if (r.provider === 'claude' && !isProviderUnavailable(e)) continue;
           if ((unavailableUntil.get(r.provider) ?? 0) < Date.now()) {
-            notify?.(`${r.provider === 'openai' ? 'OpenAI' : 'Gemini'} is unavailable (${String((e as Error).message).slice(0, 80)}); using ${routes[i + 1].model} instead.`);
+            notify?.(`${PROVIDER_NAMES[r.provider]} is unavailable (${String((e as Error).message).slice(0, 80)}); using ${routes[i + 1].model} instead.`);
           }
           unavailableUntil.set(r.provider, Date.now() + SKIP_MS);
         }
