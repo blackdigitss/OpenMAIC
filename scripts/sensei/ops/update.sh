@@ -105,6 +105,7 @@ ln -sfn "$idle" "$CURRENT"
 launchctl kickstart -k "gui/$UID/com.sensei.app"
 launchctl kickstart -k "gui/$UID/com.sensei.worker"
 launchctl kickstart -k "gui/$UID/com.sensei.gate" 2>/dev/null
+launchctl kickstart -k "gui/$UID/com.sensei.bridge" 2>/dev/null
 # The real service must come back (not just the side-port smoke test): otherwise roll back.
 up=0
 for i in {1..60}; do

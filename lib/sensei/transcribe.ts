@@ -169,14 +169,27 @@ export interface TranscribeInput {
 
 export async function transcribeLecture(db: Db, llm: StructuredLlm, input: TranscribeInput, config = senseiConfig()) {
   const duration = await probeDurationSec(input.audioPath);
-  const chunks = planChunks(duration, await detectSilences(input.audioPath));
   const slideContext = input.slides
     .map((s) => `[slide ${s.pageNo}] ${s.text.slice(0, 600)}`)
     .join('\n')
     .slice(0, 40_000);
-  const dir = await mkdtemp(join(tmpdir(), 'sensei-audio-'));
   const units: SourceUnitInput[] = [];
   const warnings: string[] = [];
+  let method = llm.modelName('audio');
+  let chunks: [number, number][] = [];
+  const local = await import('./localTranscribe');
+  if (await local.localTranscriptionAvailable()) {
+    // Free and complete: whisper on this Mac hears everything; the strong model proofreads.
+    const vocabulary = [...new Set(input.slides.flatMap((s) => s.text.match(/\b[A-Z][A-Za-z0-9]{2,}(?:\s[A-Z][A-Za-z0-9]+)?/g) ?? []))];
+    const raw = await local.whisperTranscribe(input.audioPath, vocabulary, (pct) => input.onProgress?.(pct, 200));
+    const clean = await local.cleanTranscript(llm, raw, slideContext.slice(0, 15_000), input.lectureId, (d, n) => input.onProgress?.(100 + Math.round((100 * d) / n), 200));
+    clean.units.forEach((u) => units.push({ ...u, ordinal: units.length + 1 }));
+    if (clean.rejected) warnings.push(`${clean.rejected} segment(s) kept as heard (proofreading changed too much)`);
+    warnings.push(...(await local.silentGaps(input.audioPath, raw)));
+    method = `whisper-large-v3-turbo + ${llm.modelName('strong')} proofreading`;
+  } else {
+  chunks = planChunks(duration, await detectSilences(input.audioPath));
+  const dir = await mkdtemp(join(tmpdir(), 'sensei-audio-'));
   try {
     for (const [i, [from, to]] of chunks.entries()) {
       const data = await cutChunk(input.audioPath, from, to, join(dir, `chunk-${i}.mp3`));
@@ -203,9 +216,10 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+  }
 
   // Store the transcript as a derived source (versioned: a re-transcription derives from the previous version).
-  const body = JSON.stringify({ promptVersion: TRANSCRIBE_PROMPT_VERSION, model: llm.modelName('audio'), units });
+  const body = JSON.stringify({ promptVersion: TRANSCRIBE_PROMPT_VERSION, model: method, units });
   const hash = sha256(body);
   await mkdir(config.libraryDir, { recursive: true });
   const storedPath = join(config.libraryDir, `${hash}.transcript.json`);
@@ -265,16 +279,19 @@ export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: st
       if (row.slide_text && checkNumericFidelity(row.statement, row.slide_text).ok) continue;
       const from = Math.max(0, row.start_ms / 1000 - 15);
       const to = row.end_ms / 1000 + 15;
-      const data = await cutChunk(row.audio_path, from, to, join(dir, `${row.record_id}.mp3`));
-      const clip = await llm.call({
-        schema: ClipSchema,
-        system: 'Transcribe this short clip of a respiratory therapy lecture verbatim. Write numbers as digits with units exactly as spoken. Do not guess unclear words; write [unclear].',
-        prompt: 'Transcribe the clip.',
-        tier: 'audio',
-        purpose: 'verify',
-        lectureId,
-        file: { data, mediaType: 'audio/mpeg' },
-      });
+      // Second listen: a different local model on this Mac (free); an audio model only if it's missing.
+      const { whisperAvailable, wordsFor } = await import('./reels/audio');
+      const clip = (await whisperAvailable())
+        ? { text: (await wordsFor(row.audio_path, from * 1000, to * 1000)).map((w) => w.text).join(' ') }
+        : await llm.call({
+            schema: ClipSchema,
+            system: 'Transcribe this short clip of a respiratory therapy lecture verbatim. Write numbers as digits with units exactly as spoken. Do not guess unclear words; write [unclear].',
+            prompt: 'Transcribe the clip.',
+            tier: 'audio',
+            purpose: 'verify',
+            lectureId,
+            file: { data: await cutChunk(row.audio_path, from, to, join(dir, `${row.record_id}.mp3`)), mediaType: 'audio/mpeg' },
+          });
       checked++;
       const check = checkNumericFidelity(row.statement, clip.text);
       if (!check.ok) {
