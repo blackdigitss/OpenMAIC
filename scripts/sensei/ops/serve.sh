@@ -6,7 +6,9 @@ cd "$CURRENT" || exit 1
 case "$1" in
   app)
     # Never serve a public URL without the access code gate.
-    if [ -n "$(envget SENSEI_PUBLIC_URL)" ] && [ ${#$(envget ACCESS_CODE)} -lt 6 ]; then
+    # (Measure a variable: in zsh, ${#$(cmd)} counts words, not characters.)
+    code="$(envget ACCESS_CODE)"
+    if [ -n "$(envget SENSEI_PUBLIC_URL)" ] && [ ${#code} -lt 6 ]; then
       log "refusing to start: SENSEI_PUBLIC_URL is set but ACCESS_CODE is missing or shorter than 6"; sleep 60; exit 1
     fi
     # Loopback only: the phone reaches Sensei through the Cloudflare Tunnel, never the LAN.

@@ -105,6 +105,19 @@ ln -sfn "$idle" "$CURRENT"
 launchctl kickstart -k "gui/$UID/com.sensei.app"
 launchctl kickstart -k "gui/$UID/com.sensei.worker"
 launchctl kickstart -k "gui/$UID/com.sensei.gate" 2>/dev/null
+# The real service must come back (not just the side-port smoke test): otherwise roll back.
+up=0
+for i in {1..60}; do
+  sleep 3
+  [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/sensei)" = 200 ] && { up=1; break; }
+done
+if [ $up != 1 ]; then
+  ln -sfn "$live" "$CURRENT"
+  launchctl kickstart -k "gui/$UID/com.sensei.app"
+  launchctl kickstart -k "gui/$UID/com.sensei.worker"
+  launchctl kickstart -k "gui/$UID/com.sensei.gate" 2>/dev/null
+  fail "the new version didn't come up as the live app; rolled back to the previous one."
+fi
 # Advance the branch only if nobody committed to it during the build.
 git update-ref refs/heads/sensei HEAD "$base" || log "sensei branch moved during the update; left unchanged"
 # Keep the fork's main a clean mirror of upstream (the established weekly habit).
