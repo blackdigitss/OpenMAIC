@@ -124,6 +124,8 @@ export interface LessonClientOptions {
   pollMs?: number;
   timeoutMs?: number;
   onProgress?: (message: string, progress: number) => void;
+  /** Model for this lesson ("provider:model"); default is the server's DEFAULT_MODEL. */
+  model?: string;
 }
 
 async function accessCookie(opts: LessonClientOptions): Promise<string | undefined> {
@@ -141,7 +143,11 @@ async function accessCookie(opts: LessonClientOptions): Promise<string | undefin
 /** Submit the brief to OpenMAIC and wait for the classroom URL. */
 export async function generateClassroom(brief: LessonBrief, opts: LessonClientOptions): Promise<string> {
   const cookie = await accessCookie(opts);
-  const headers: Record<string, string> = { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) };
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    ...(cookie ? { cookie } : {}),
+    ...(opts.model ? { 'x-model': opts.model } : {}),
+  };
   const res = await fetch(`${opts.baseUrl}/api/generate-classroom`, {
     method: 'POST',
     headers,

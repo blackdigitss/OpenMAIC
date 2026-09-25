@@ -10,7 +10,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { Output } from 'ai';
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { z } from 'zod';
@@ -88,6 +88,8 @@ export function isProviderUnavailable(e: unknown): boolean {
 const unavailableUntil = new Map<string, number>();
 const SKIP_MS = 30 * 60_000;
 
+const CLAUDE_READABLE = /^(application\/pdf|image\/(png|jpeg|gif|webp))$/;
+
 const PROVIDER_NAMES: Record<ModelRoute['provider'], string> = { google: 'Gemini', openai: 'OpenAI', claude: 'Your Claude subscription' };
 
 /** JSON Schema for the CLI, without the draft tag it doesn't resolve. */
@@ -102,14 +104,52 @@ function cliSchema(schema: z.ZodType): object {
  * servers, and no saved session, so each call carries ~1k tokens of overhead.
  * Hitting the plan's usage limit reads as "provider unavailable" (falls through).
  */
-export function claudeSubscriptionCall<T>(bin: string, model: string, req: StructuredCall<T>, timeoutMs = 15 * 60_000): Promise<unknown> {
+export async function claudeSubscriptionCall<T>(bin: string, model: string, req: StructuredCall<T>, timeoutMs = 15 * 60_000): Promise<unknown> {
+  // A PDF or image is handed over as a file Claude may only read (nothing else is allowed).
+  const fileDir = req.file ? await mkdtemp(join(tmpdir(), 'sensei-claude-')) : null;
+  const filePath = fileDir && req.file ? join(fileDir, `input.${req.file.mediaType === 'application/pdf' ? 'pdf' : req.file.mediaType.split('/')[1]}`) : null;
+  if (filePath && req.file) await writeFile(filePath, req.file.data);
   const args = [
-    '-p', '--output-format', 'json', '--model', model, '--tools', '', '--no-session-persistence',
+    '-p', '--output-format', 'json', '--model', model, '--tools', fileDir ? 'Read' : '', '--no-session-persistence',
     '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
     '--system-prompt', req.system, '--json-schema', JSON.stringify(cliSchema(req.schema)),
+    ...(fileDir ? ['--allowedTools', 'Read', '--add-dir', fileDir] : []),
   ];
+  const prompt = filePath ? `The file to work from is ${filePath}. Read it with the Read tool first.\n\n${req.prompt}` : req.prompt;
+  try {
+    return await runClaude(bin, args, prompt, fileDir ?? tmpdir(), timeoutMs);
+  } finally {
+    if (fileDir) await rm(fileDir, { recursive: true, force: true });
+  }
+}
+
+export interface ClaudeCliResult {
+  text: string;
+  structured: unknown;
+  usage: { inputTokens: number; outputTokens: number };
+}
+
+/**
+ * Plain (or JSON-schema) completion through the Claude CLI, for callers that need
+ * text back (the local OpenAI-compatible bridge that lets OpenMAIC's lessons use
+ * the subscription). Same lean flags as structured calls; no tools.
+ */
+export async function claudeCliComplete(
+  bin: string,
+  opts: { model: string; system: string; prompt: string; jsonSchema?: object; timeoutMs?: number },
+): Promise<ClaudeCliResult> {
+  const args = [
+    '-p', '--output-format', 'json', '--model', opts.model, '--tools', '', '--no-session-persistence',
+    '--setting-sources', '', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
+    '--system-prompt', opts.system || 'You are a helpful assistant.',
+    ...(opts.jsonSchema ? ['--json-schema', JSON.stringify(opts.jsonSchema)] : []),
+  ];
+  return (await runClaude(bin, args, opts.prompt, tmpdir(), opts.timeoutMs ?? 15 * 60_000, true)) as ClaudeCliResult;
+}
+
+function runClaude(bin: string, args: string[], prompt: string, cwd: string, timeoutMs: number, full = false): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd: tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(bin, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);
@@ -121,21 +161,30 @@ export function claudeSubscriptionCall<T>(bin: string, model: string, req: Struc
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      let d: { is_error?: boolean; result?: string; structured_output?: unknown } | null = null;
+      let d: { is_error?: boolean; result?: string; structured_output?: unknown; usage?: Record<string, number> } | null = null;
       try {
         d = JSON.parse(out);
       } catch {
         // not JSON: report what the CLI said
       }
       const message = String(d?.result ?? err ?? '').trim() || `claude exited with code ${code}`;
-      if (!d || d.is_error || d.structured_output === undefined) {
+      if (!d || d.is_error || (!full && d.structured_output === undefined)) {
         const limited = /usage limit|limit reached|rate limit|out of (extra )?usage|credit|quota|not logged in|login|authenticat/i.test(message);
         reject(Object.assign(new Error(`Claude subscription: ${message.slice(0, 200)}`), limited ? { statusCode: 429, message: `no credits: ${message.slice(0, 200)}` } : {}));
         return;
       }
+      if (full) {
+        const u = d.usage ?? {};
+        resolve({
+          text: typeof d.result === 'string' ? d.result : '',
+          structured: d.structured_output,
+          usage: { inputTokens: (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), outputTokens: u.output_tokens ?? 0 },
+        } satisfies ClaudeCliResult);
+        return;
+      }
       resolve(d.structured_output);
     });
-    child.stdin.end(req.prompt);
+    child.stdin.end(prompt);
   });
 }
 
@@ -174,7 +223,8 @@ export function senseiLlm(config = senseiConfig(), notify?: (message: string) =>
           lastError ??= new MissingApiKeyError(r.provider);
           continue;
         }
-        if (req.file && r.provider !== 'google') continue; // audio and PDFs go to Gemini
+        if (req.file && r.provider === 'openai') continue; // files go to Gemini or Claude
+        if (req.file && r.provider === 'claude' && !CLAUDE_READABLE.test(req.file.mediaType)) continue; // audio: Gemini
         try {
           if (r.provider === 'claude') {
             const output = req.schema.parse(await claudeSubscriptionCall(config.claudeBin, r.model, req));

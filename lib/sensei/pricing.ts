@@ -11,6 +11,8 @@ export interface Price {
 }
 
 export const PRICES: [RegExp, Price][] = [
+  // Your Claude subscription (through the local bridge): no per-token bill.
+  [/^claude-(opus|sonnet|haiku)$/, { input: 0, output: 0 }],
   // OpenAI (openai.com/api/pricing, checked 2026-09-24).
   [/gpt-5\.6-luna/, { input: 1, output: 6 }],
   [/gpt-5\.6-terra/, { input: 2.5, output: 15 }],

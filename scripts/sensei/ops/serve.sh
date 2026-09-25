@@ -15,6 +15,7 @@ case "$1" in
     exec node_modules/.bin/next start -H 127.0.0.1 -p "${SENSEI_PORT:-3000}" ;;
   worker) exec node_modules/.bin/tsx scripts/sensei/worker.ts ;;
   gate) exec node_modules/.bin/tsx scripts/sensei/gate.ts ;;
+  bridge) exec node_modules/.bin/tsx scripts/sensei/claude-bridge.ts ;;
   backup) exec node_modules/.bin/tsx scripts/sensei/cli.ts backup ;;
-  *) echo "usage: serve.sh app|worker|gate|backup"; exit 2 ;;
+  *) echo "usage: serve.sh app|worker|gate|bridge|backup"; exit 2 ;;
 esac

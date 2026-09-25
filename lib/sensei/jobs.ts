@@ -346,7 +346,11 @@ async function studyLecture(
       db, llm,
       {
         lectureId, audioSourceId: a.sourceId, audioPath: a.path, slides,
-        onProgress: (d, n) => void progress(db, jobId, 'transcribe', at(0.5 * (d / n)), `Transcribing — part ${d} of ${n}`),
+        onProgress: (d, n) =>
+          void progress(
+            db, jobId, 'transcribe', at(0.5 * (d / n)),
+            n === 200 ? (d <= 100 ? `Listening to the recording — ${d}%` : `Proofreading the transcript — ${d - 100}%`) : `Transcribing — part ${d} of ${n}`,
+          ),
       },
       config,
     );
@@ -421,10 +425,17 @@ async function studyLecture(
     await progress(db, jobId, 'lesson', at(0.93), 'Building tonight’s lesson');
     const brief = await buildLessonBrief(db, lectureId);
     if (brief) {
-      const url = await generateClassroom(brief, {
+      const lessonOpts = {
         baseUrl: deps.appUrl,
         accessCode: deps.accessCode,
-        onProgress: (m, p) => void progress(db, jobId, 'lesson', at(0.93 + 0.07 * (p / 100)), `Building tonight’s lesson — ${m}`),
+        onProgress: (m: string, p: number) => void progress(db, jobId, 'lesson', at(0.93 + 0.07 * (p / 100)), `Building tonight’s lesson — ${m}`),
+      };
+      // Lessons run on your Claude subscription (DEFAULT_MODEL, via the local bridge);
+      // if Claude can't (usage limit, bridge down), build it once more with the backup.
+      const url = await generateClassroom(brief, lessonOpts).catch((e: Error) => {
+        const backup = process.env.SENSEI_LESSON_BACKUP_MODEL;
+        if (!backup) throw e;
+        return generateClassroom(brief, { ...lessonOpts, model: backup });
       });
       await db.query('UPDATE sensei_lecture SET classroom_url = $2 WHERE id = $1', [lectureId, new URL(url).pathname]);
     }
