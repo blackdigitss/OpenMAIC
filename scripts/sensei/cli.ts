@@ -79,6 +79,18 @@ async function main() {
       console.log(job ? `Queued job ${job}; the worker will transcribe it again.` : 'No job found for that lecture.');
       break;
     }
+    case 'drills': {
+      // Lab drills for one lecture, or every processed lecture ('all').
+      const { generateLabDrills } = await import('@/lib/sensei/drills');
+      const { senseiLlm } = await import('@/lib/sensei/llm');
+      const llm = senseiLlm();
+      const { rows } = await db.query<{ id: string; title: string }>(
+        args[0] === 'all' ? `SELECT id, title FROM sensei_lecture WHERE status = 'ready' ORDER BY lecture_date` : 'SELECT id, title FROM sensei_lecture WHERE id = $1',
+        args[0] === 'all' ? [] : [args[0]],
+      );
+      for (const l of rows) console.log(l.title, await generateLabDrills(db, llm, l.id));
+      break;
+    }
     case 'notify': {
       // Used by the shell scripts (updater, backup): cli.ts notify failures "message"
       const { notifyStudent } = await import('@/lib/sensei/notify');

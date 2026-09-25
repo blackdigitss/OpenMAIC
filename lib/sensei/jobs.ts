@@ -406,6 +406,11 @@ async function studyLecture(
     await generateCards(db, llm, id);
   }
 
+  // Lab drills (step order, spot the error) from this lecture's facts, mixed into reviews.
+  await progress(db, jobId, 'cards', at(0.91), 'Making lab drills');
+  const { generateLabDrills } = await import('./drills');
+  await generateLabDrills(db, llm, lectureId).catch(() => undefined);
+
   // Fill thin concepts from the textbook (bounded per lecture; skipped if no textbook).
   const { thinConcepts, fillGap } = await import('./gaps');
   for (const c of await thinConcepts(db, lectureId)) {

@@ -228,6 +228,71 @@ function ListenSection({
 }
 
 /** Stable per card, position and day, so the numbers don't change while you type. */
+/** Tap the steps in order; a wrong tap shakes and counts. Mistakes set the rating. */
+function OrderCard({ title, steps, why, seed, onDone }: { title: string; steps: string[]; why?: string; seed: number; onDone: (rating: 1 | 2 | 3 | 4) => void }) {
+  const shuffled = useMemo(() => {
+    const idx = steps.map((_, k) => k);
+    let s = seed || 1;
+    for (let k = idx.length - 1; k > 0; k--) {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+      const j = s % (k + 1);
+      [idx[k], idx[j]] = [idx[j], idx[k]];
+    }
+    return idx;
+  }, [steps, seed]);
+  const [placed, setPlaced] = useState<number[]>([]);
+  const [misses, setMisses] = useState(0);
+  const [wrong, setWrong] = useState<number | null>(null);
+  const done = placed.length === steps.length;
+  const tap = (k: number) => {
+    if (done || placed.includes(k)) return;
+    if (k === placed.length) {
+      setPlaced((p) => [...p, k]);
+      setWrong(null);
+    } else {
+      setMisses((m) => m + 1);
+      setWrong(k);
+    }
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <p className="s-prose" style={{ margin: 0 }}>
+        {title.replace(/^Put the steps in order:\s*/, '')}
+      </p>
+      <div className="t-foot c2">{done ? 'Done' : `Tap step ${placed.length + 1} of ${steps.length}`}</div>
+      {placed.length > 0 && (
+        <ol className="s-steps-list">
+          {placed.map((k) => (
+            <li key={k}>{steps[k]}</li>
+          ))}
+        </ol>
+      )}
+      {!done && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {shuffled
+            .filter((k) => !placed.includes(k))
+            .map((k) => (
+              <button key={k} className="s-option" data-state={wrong === k ? 'wrong' : undefined} onClick={() => tap(k)}>
+                <span style={{ flex: 1, textAlign: 'left' }}>{steps[k]}</span>
+              </button>
+            ))}
+        </div>
+      )}
+      {done && (
+        <>
+          <div className="t-headline" style={{ color: misses === 0 ? 'var(--green)' : misses === 1 ? 'var(--orange)' : 'var(--red)' }}>
+            {misses === 0 ? 'Perfect order' : `${misses} wrong tap${misses > 1 ? 's' : ''}`}
+          </div>
+          {why && <p className="t-sub c2" style={{ margin: 0 }}>{why}</p>}
+          <button className="s-btn" onClick={() => onDone(misses === 0 ? 3 : misses === 1 ? 2 : 1)}>
+            Continue
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** A practice question with its options in a fresh order each time, so you learn the answer, not the letter. */
 function McqCard({ payload, stem, seed, onDone }: { payload: McqPayload; stem: string; seed: number; onDone: (correct: boolean) => void }) {
   const order = useMemo(() => {
@@ -247,7 +312,7 @@ function McqCard({ payload, stem, seed, onDone }: { payload: McqPayload; stem: s
       options={order.map((k) => payload.options[k])}
       answer={order.indexOf(payload.answer)}
       rationale={payload.rationale}
-      footnote={payload.source ? `From your ${payload.source}` : undefined}
+      footnote={payload.source && !payload.source.startsWith('lab drill') ? `From your ${payload.source}` : undefined}
       onDone={onDone}
       doneLabel="Continue"
     />
@@ -385,7 +450,11 @@ export function ReviewSession() {
                   {card.conceptName}
                 </button>
               </div>
-              {card.payload?.kind === 'mcq' ? (
+              {card.payload?.kind === 'order' ? (
+                <div style={{ marginTop: 18 }}>
+                  <OrderCard key={`${card.id}:${i}`} title={card.front} steps={card.payload.steps} why={card.payload.why} seed={seedFor(card.id, i)} onDone={rate} />
+                </div>
+              ) : card.payload?.kind === 'mcq' ? (
                 <div style={{ marginTop: 18 }}>
                   <McqCard key={`${card.id}:${i}`} payload={card.payload} stem={card.front} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} />
                 </div>
