@@ -177,16 +177,38 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
   const warnings: string[] = [];
   let method = llm.modelName('audio');
   let chunks: [number, number][] = [];
+  let words: import('./reels/boundaries').Word[] = [];
   const local = await import('./localTranscribe');
-  if (await local.localTranscriptionAvailable()) {
-    // Free and complete: whisper on this Mac hears everything; the strong model proofreads.
-    const vocabulary = [...new Set(input.slides.flatMap((s) => s.text.match(/\b[A-Z][A-Za-z0-9]{2,}(?:\s[A-Z][A-Za-z0-9]+)?/g) ?? []))];
-    const raw = await local.whisperTranscribe(input.audioPath, vocabulary, (pct) => input.onProgress?.(pct, 200));
+  const vocabulary = [...new Set(input.slides.flatMap((s) => s.text.match(/\b[A-Z][A-Za-z0-9]{2,}(?:\s[A-Z][A-Za-z0-9]+)?/g) ?? []))];
+  // 1. OpenAI whisper-1 in the cloud (complete, word times, no load on the Mac).
+  // 2. Only if SENSEI_LOCAL_AUDIO=1: whisper.cpp on this Mac (free, but hours of CPU).
+  // 3. Otherwise the audio model route (Gemini), below.
+  let raw: import('./localTranscribe').RawSegment[] | null = null;
+  if (config.openaiApiKey) {
+    try {
+      const { whisperApiTranscribe, recordTranscriptionUsage } = await import('./cloudTranscribe');
+      const c = await whisperApiTranscribe(config.openaiApiKey, input.audioPath, { vocabulary, onProgress: (d, n) => input.onProgress?.(Math.round((100 * d) / n), 200) });
+      await recordTranscriptionUsage(c.seconds, `sensei:transcribe:${input.lectureId}`);
+      raw = local.dropArtifacts(c.segments);
+      words = c.words;
+      method = 'whisper-1 (OpenAI)';
+    } catch (e) {
+      const { isProviderUnavailable } = await import('./llm');
+      if (!isProviderUnavailable(e)) throw e;
+      warnings.push(`cloud transcription unavailable (${(e as Error).message.slice(0, 80)})`);
+    }
+  }
+  if (!raw && process.env.SENSEI_LOCAL_AUDIO === '1' && (await local.localTranscriptionAvailable())) {
+    raw = await local.whisperTranscribe(input.audioPath, vocabulary, (pct) => input.onProgress?.(pct, 200));
+    method = 'whisper-large-v3-turbo (this Mac)';
+  }
+  if (raw) {
+    // The strong model (your Claude subscription) proofreads against the slides.
     const clean = await local.cleanTranscript(llm, raw, slideContext.slice(0, 15_000), input.lectureId, (d, n) => input.onProgress?.(100 + Math.round((100 * d) / n), 200));
     clean.units.forEach((u) => units.push({ ...u, ordinal: units.length + 1 }));
     if (clean.rejected) warnings.push(`${clean.rejected} segment(s) kept as heard (proofreading changed too much)`);
     warnings.push(...(await local.silentGaps(input.audioPath, raw)));
-    method = `whisper-large-v3-turbo + ${llm.modelName('strong')} proofreading`;
+    method = `${method} + ${llm.modelName('strong')} proofreading`;
   } else {
   chunks = planChunks(duration, await detectSilences(input.audioPath));
   const dir = await mkdtemp(join(tmpdir(), 'sensei-audio-'));
@@ -219,7 +241,8 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
   }
 
   // Store the transcript as a derived source (versioned: a re-transcription derives from the previous version).
-  const body = JSON.stringify({ promptVersion: TRANSCRIBE_PROMPT_VERSION, model: method, units });
+  // Word times are kept with the transcript: professor reels cut clips from them directly.
+  const body = JSON.stringify({ promptVersion: TRANSCRIBE_PROMPT_VERSION, model: method, units, words });
   const hash = sha256(body);
   await mkdir(config.libraryDir, { recursive: true });
   const storedPath = join(config.libraryDir, `${hash}.transcript.json`);
@@ -280,8 +303,10 @@ export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: st
       const from = Math.max(0, row.start_ms / 1000 - 15);
       const to = row.end_ms / 1000 + 15;
       // Second listen: a different local model on this Mac (free); an audio model only if it's missing.
+      // Second listen by a different model than the transcriber: the audio route (Gemini),
+      // or this Mac's small whisper only if local audio work is allowed.
       const { whisperAvailable, wordsFor } = await import('./reels/audio');
-      const clip = (await whisperAvailable())
+      const clip = process.env.SENSEI_LOCAL_AUDIO === '1' && (await whisperAvailable())
         ? { text: (await wordsFor(row.audio_path, from * 1000, to * 1000)).map((w) => w.text).join(' ') }
         : await llm.call({
             schema: ClipSchema,

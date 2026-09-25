@@ -36,6 +36,7 @@ import { notifyStudent, vapidFromEnv } from '@/lib/sensei/notify';
 import { getSettings, setSetting } from '@/lib/sensei/settings';
 import { monthSpend } from '@/lib/sensei/budget';
 import { activeWeights, spacingStatus } from '@/lib/sensei/spacing';
+import { briefProvider } from '@/lib/sensei/brief';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -327,7 +328,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         const body = (await req.json()) as { question: string; conceptId?: string };
         const question = String(body.question ?? '').slice(0, 1000).trim();
         if (!question) return fail(400, 'Ask a question');
-        return ok(await askSensei(db, geminiLlm(config), question, body.conceptId && UUID.test(body.conceptId) ? body.conceptId : null));
+        return ok(await askSensei(db, geminiLlm(config, undefined, briefProvider(db)), question, body.conceptId && UUID.test(body.conceptId) ? body.conceptId : null));
       }
       case 'courses': {
         const body = (await req.json()) as {

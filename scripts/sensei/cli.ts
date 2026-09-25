@@ -66,7 +66,8 @@ async function main() {
     case 'reprocess': {
       const { processLecture } = await import('@/lib/sensei/pipeline');
       const { geminiLlm } = await import('@/lib/sensei/llm');
-      const report = await processLecture(db, geminiLlm(), args[0], {
+      const { briefProvider } = await import('@/lib/sensei/brief');
+      const report = await processLecture(db, geminiLlm(undefined, undefined, briefProvider(db)), args[0], {
         onProgress: (d, n) => process.stdout.write(`\r${d}/${n} windows`),
       });
       console.log('\n', report);
@@ -83,7 +84,8 @@ async function main() {
       // Lab drills for one lecture, or every processed lecture ('all').
       const { generateLabDrills } = await import('@/lib/sensei/drills');
       const { senseiLlm } = await import('@/lib/sensei/llm');
-      const llm = senseiLlm();
+      const { briefProvider } = await import('@/lib/sensei/brief');
+      const llm = senseiLlm(undefined, undefined, briefProvider(db));
       const { rows } = await db.query<{ id: string; title: string }>(
         args[0] === 'all' ? `SELECT id, title FROM sensei_lecture WHERE status = 'ready' ORDER BY lecture_date` : 'SELECT id, title FROM sensei_lecture WHERE id = $1',
         args[0] === 'all' ? [] : [args[0]],
@@ -135,7 +137,8 @@ async function main() {
       const { geminiLlm } = await import('@/lib/sensei/llm');
       const { syncCalcCards } = await import('@/lib/sensei/calc/unlock');
       const { syncCaseCards } = await import('@/lib/sensei/cases/unlock');
-      console.log(`Tagged ${await backfillBoardTags(db, geminiLlm())} concepts; +${await syncCalcCards(db)} calc and +${await syncCaseCards(db)} case cards.`);
+      const { briefProvider } = await import('@/lib/sensei/brief');
+      console.log(`Tagged ${await backfillBoardTags(db, geminiLlm(undefined, undefined, briefProvider(db)))} concepts; +${await syncCalcCards(db)} calc and +${await syncCaseCards(db)} case cards.`);
       break;
     }
     case 'spacing': {
@@ -149,7 +152,8 @@ async function main() {
       // A practice-question PDF → multiple-choice review cards, checked against your course facts.
       const { importPracticeQuestions } = await import('@/lib/sensei/practice');
       const { senseiLlm } = await import('@/lib/sensei/llm');
-      const report = await importPracticeQuestions(db, senseiLlm(), resolve(args[0]), flag(args, 'label') ?? 'practice questions');
+      const { briefProvider } = await import('@/lib/sensei/brief');
+      const report = await importPracticeQuestions(db, senseiLlm(undefined, undefined, briefProvider(db)), resolve(args[0]), flag(args, 'label') ?? 'practice questions');
       console.log(report);
       break;
     }
