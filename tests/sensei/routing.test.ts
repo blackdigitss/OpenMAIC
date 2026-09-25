@@ -131,3 +131,12 @@ describe('Claude subscription route', () => {
     expect(out).toEqual({ answer: 'ok' });
   });
 });
+
+describe('titles from file names', () => {
+  it('drops upload prefixes, separators and housekeeping words; library hashes are not titles', async () => {
+    const { titleFromFile } = await import('@/lib/sensei/ingest');
+    expect(titleFromFile('/s/1790298173835-Storage and Delivery of Medical Gases - Tagged.pdf')).toBe('Storage and Delivery of Medical Gases');
+    expect(titleFromFile('Vital_Signs-Final (1).pdf')).toBe('Vital Signs');
+    expect(titleFromFile('/lib/f003bc5dda9d317ef213e190103644b5b78c5c73e7e97dee341a0061041d22d6.pdf')).toBeNull();
+  });
+});

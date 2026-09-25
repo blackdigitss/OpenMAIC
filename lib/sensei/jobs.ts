@@ -11,7 +11,7 @@ import { z } from 'zod';
 
 import { senseiConfig } from './config';
 import type { Db } from './db/types';
-import { detectKind, ingestFile, ingestReference } from './ingest';
+import { detectKind, ingestFile, ingestReference, titleFromFile } from './ingest';
 import { conceptsNeedingCards, generateCards } from './learn';
 import { buildLessonBrief, generateClassroom } from './lesson';
 import type { StructuredLlm } from './llm';
@@ -204,9 +204,13 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
     let report: LectureRunReport | null = null;
     const deckSources: string[] = [];
     for (const path of decks) {
+      // A file already in the library keeps its existing title (and so its lecture).
+      const known = titleFromFile(path)
+        ? null
+        : (await db.query<{ title: string }>('SELECT title FROM sensei_source WHERE sha256 = $1 LIMIT 1', [sha256(await readFile(path))])).rows[0]?.title;
       const deck = await ingestFile(
         db,
-        { path, kind: 'slides', course: { code: input.courseCode }, lecture: { date: input.date!, title: deckTitle(path), kind: 'deck' } },
+        { path, kind: 'slides', course: { code: input.courseCode }, lecture: { date: input.date!, title: known ?? deckTitle(path), kind: 'deck' } },
         config,
       );
       deckSources.push(deck.sourceId);
@@ -270,7 +274,7 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
 }
 
 function deckTitle(path: string): string {
-  return basename(path, extname(path)).replace(/^\d{10,}-/, '').replace(/[_-]+/g, ' ').trim() || 'Slides';
+  return titleFromFile(path) ?? 'Slides';
 }
 
 /** Transcribe (sessions), extract, verify, summarize, make cards, and build the lesson for one lecture. */
