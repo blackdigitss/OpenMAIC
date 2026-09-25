@@ -1,7 +1,9 @@
 'use client';
 
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+import type { McqPayload } from '@/lib/sensei/learn';
 
 import {
   api,
@@ -17,7 +19,7 @@ import {
 import { PlayIcon } from './icons';
 import { pendingCardIds, postRating } from './offline';
 import { CalcProblem } from './Calc';
-import { CaseQuestion } from './Case';
+import { CaseQuestion, ChoiceQuestion } from './Case';
 import { CheckIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -226,6 +228,32 @@ function ListenSection({
 }
 
 /** Stable per card, position and day, so the numbers don't change while you type. */
+/** A practice question with its options in a fresh order each time, so you learn the answer, not the letter. */
+function McqCard({ payload, stem, seed, onDone }: { payload: McqPayload; stem: string; seed: number; onDone: (correct: boolean) => void }) {
+  const order = useMemo(() => {
+    const idx = payload.options.map((_, k) => k);
+    let s = seed || 1;
+    for (let k = idx.length - 1; k > 0; k--) {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+      const j = s % (k + 1);
+      [idx[k], idx[j]] = [idx[j], idx[k]];
+    }
+    // Keep "all/none of the above" last, where they make sense.
+    return [...idx.filter((k) => !/\b(all|none|both) of the above\b/i.test(payload.options[k])), ...idx.filter((k) => /\b(all|none|both) of the above\b/i.test(payload.options[k]))];
+  }, [payload.options, seed]);
+  return (
+    <ChoiceQuestion
+      stem={stem}
+      options={order.map((k) => payload.options[k])}
+      answer={order.indexOf(payload.answer)}
+      rationale={payload.rationale}
+      footnote={payload.source ? `From your ${payload.source}` : undefined}
+      onDone={onDone}
+      doneLabel="Continue"
+    />
+  );
+}
+
 function seedFor(id: string, i: number): number {
   let h = 2166136261;
   for (const ch of `${id}:${i}:${new Date().toDateString()}`)
@@ -341,7 +369,7 @@ export function ReviewSession() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -40 }}
               transition={{ duration: 0.22 }}
-              onClick={() => !shown && !card.formulaId && !card.caseFamily && setShown(true)}
+              onClick={() => !shown && !card.formulaId && !card.caseFamily && !card.payload && setShown(true)}
             >
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span className="s-pill tint">{COMPETENCY[card.competency]}</span>
@@ -357,7 +385,11 @@ export function ReviewSession() {
                   {card.conceptName}
                 </button>
               </div>
-              {card.caseFamily ? (
+              {card.payload?.kind === 'mcq' ? (
+                <div style={{ marginTop: 18 }}>
+                  <McqCard key={`${card.id}:${i}`} payload={card.payload} stem={card.front} seed={seedFor(card.id, i)} onDone={(correct) => rate(correct ? 3 : 1)} />
+                </div>
+              ) : card.caseFamily ? (
                 <div style={{ marginTop: 18 }}>
                   <CaseQuestion
                     family={card.caseFamily}
@@ -397,7 +429,7 @@ export function ReviewSession() {
               )}
             </motion.div>
           </AnimatePresence>
-          {card.formulaId || card.caseFamily ? null : shown ? (
+          {card.formulaId || card.caseFamily || card.payload ? null : shown ? (
             <div className="s-rate">
               <button onClick={() => rate(1)} style={{ color: 'var(--red)' }}>
                 Again<span>{card.intervals[1]}</span>

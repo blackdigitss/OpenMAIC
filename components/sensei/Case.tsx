@@ -10,18 +10,39 @@ import { CheckIcon } from './icons';
 export function CaseQuestion({ family, seed, onDone, doneLabel = 'Next' }: { family: string; seed: number; onDone: (correct: boolean) => void; doneLabel?: string }) {
   const fam = familyById(family);
   const item = useMemo(() => fam?.generate(seed), [fam, seed]);
-  const [chosen, setChosen] = useState<number | null>(null);
   if (!fam || !item) return null;
+  return <ChoiceQuestion stem={item.stem} options={item.options} answer={item.answer} rationale={item.rationale} onDone={onDone} doneLabel={doneLabel} />;
+}
+
+/** A single-best-answer question: tap an option, see the key and why, then continue. */
+export function ChoiceQuestion({
+  stem,
+  options,
+  answer,
+  rationale,
+  footnote,
+  onDone,
+  doneLabel = 'Next',
+}: {
+  stem: string;
+  options: string[];
+  answer: number;
+  rationale: string[];
+  footnote?: string;
+  onDone: (correct: boolean) => void;
+  doneLabel?: string;
+}) {
+  const [chosen, setChosen] = useState<number | null>(null);
   const answered = chosen != null;
-  const correct = chosen === item.answer;
+  const correct = chosen === answer;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <p className="s-prose" style={{ margin: 0 }}>
-        {item.stem}
+        {stem}
       </p>
       <div style={{ display: 'grid', gap: 8 }}>
-        {item.options.map((opt, i) => {
-          const isKey = i === item.answer;
+        {options.map((opt, i) => {
+          const isKey = i === answer;
           const state = !answered ? '' : isKey ? 'right' : i === chosen ? 'wrong' : 'dim';
           return (
             <button key={i} className="s-option" data-state={state || undefined} disabled={answered} onClick={() => setChosen(i)}>
@@ -35,13 +56,14 @@ export function CaseQuestion({ family, seed, onDone, doneLabel = 'Next' }: { fam
       {answered && (
         <>
           <div className="t-headline" style={{ color: correct ? 'var(--green)' : 'var(--red)' }}>
-            {correct ? 'Correct' : `The best answer is ${String.fromCharCode(65 + item.answer)}`}
+            {correct ? 'Correct' : `The best answer is ${String.fromCharCode(65 + answer)}`}
           </div>
           <ul className="s-steps-list" style={{ listStyle: 'disc' }}>
-            {item.rationale.map((r, i) => (
+            {rationale.map((r, i) => (
               <li key={i}>{r}</li>
             ))}
           </ul>
+          {footnote && <p className="t-foot c3" style={{ margin: 0 }}>{footnote}</p>}
           <button className="s-btn" onClick={() => onDone(correct)}>
             {doneLabel}
           </button>

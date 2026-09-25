@@ -103,6 +103,14 @@ async function main() {
       console.log(run ?? `Collecting data (${(await spacingStatus(db)).collected}/300 first reviews).`);
       break;
     }
+    case 'import-questions': {
+      // A practice-question PDF → multiple-choice review cards, checked against your course facts.
+      const { importPracticeQuestions } = await import('@/lib/sensei/practice');
+      const { senseiLlm } = await import('@/lib/sensei/llm');
+      const report = await importPracticeQuestions(db, senseiLlm(), resolve(args[0]), flag(args, 'label') ?? 'practice questions');
+      console.log(report);
+      break;
+    }
     case 'textbook-pages': {
       // One-time for textbooks indexed before printed pages existed.
       const { setPrintedPages } = await import('@/lib/sensei/ingest');
