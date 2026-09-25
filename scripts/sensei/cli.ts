@@ -91,6 +91,29 @@ async function main() {
       for (const l of rows) console.log(l.title, await generateLabDrills(db, llm, l.id));
       break;
     }
+    case 'lesson-voice': {
+      // Record narration for lessons built before the lesson voice existed ('all' or a classroom id).
+      // Run from the live app folder so OpenMAIC's classroom store resolves to the real data.
+      const { readClassroom, persistClassroom, CLASSROOMS_DIR } = await import('@/lib/server/classroom-storage');
+      const { generateTTSForClassroom } = await import('@/lib/server/classroom-media-generation');
+      const { readdir } = await import('fs/promises');
+      const pub = process.env.SENSEI_PUBLIC_URL;
+      if (!pub) throw new Error('SENSEI_PUBLIC_URL is not set');
+      const ids = args[0] === 'all' ? (await readdir(CLASSROOMS_DIR)).filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, '')) : [args[0]];
+      for (const id of ids) {
+        const c = await readClassroom(id);
+        if (!c) continue;
+        const speech = c.scenes.flatMap((s) => (s as { actions?: { type: string; audioUrl?: string }[] }).actions ?? []).filter((a) => a.type === 'speech');
+        if (speech.length && speech.every((a) => a.audioUrl)) {
+          console.log(`${id}: already has narration`);
+          continue;
+        }
+        const coverage = await generateTTSForClassroom(c.scenes, id, pub.replace(/\/$/, ''));
+        await persistClassroom({ id, stage: c.stage, scenes: c.scenes }, pub.replace(/\/$/, ''));
+        console.log(`${id}: narration`, coverage);
+      }
+      break;
+    }
     case 'notify': {
       // Used by the shell scripts (updater, backup): cli.ts notify failures "message"
       const { notifyStudent } = await import('@/lib/sensei/notify');

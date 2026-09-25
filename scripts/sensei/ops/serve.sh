@@ -16,6 +16,7 @@ case "$1" in
   worker) exec node_modules/.bin/tsx scripts/sensei/worker.ts ;;
   gate) exec node_modules/.bin/tsx scripts/sensei/gate.ts ;;
   bridge) exec node_modules/.bin/tsx scripts/sensei/claude-bridge.ts ;;
+  voice) exec "$LIB/tools/kokoro/venv/bin/python" scripts/sensei/voice-server.py ;;
   backup) exec node_modules/.bin/tsx scripts/sensei/cli.ts backup ;;
-  *) echo "usage: serve.sh app|worker|gate|bridge|backup"; exit 2 ;;
+  *) echo "usage: serve.sh app|worker|gate|bridge|voice|backup"; exit 2 ;;
 esac

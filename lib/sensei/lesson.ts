@@ -140,6 +140,13 @@ async function accessCookie(opts: LessonClientOptions): Promise<string | undefin
   return cookie;
 }
 
+export function publicOriginHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const pub = env.SENSEI_PUBLIC_URL;
+  if (!pub) return {};
+  const u = new URL(pub);
+  return { 'x-forwarded-host': u.host, 'x-forwarded-proto': u.protocol.replace(':', '') };
+}
+
 /** Submit the brief to OpenMAIC and wait for the classroom URL. */
 export async function generateClassroom(brief: LessonBrief, opts: LessonClientOptions): Promise<string> {
   const cookie = await accessCookie(opts);
@@ -147,11 +154,16 @@ export async function generateClassroom(brief: LessonBrief, opts: LessonClientOp
     'content-type': 'application/json',
     ...(cookie ? { cookie } : {}),
     ...(opts.model ? { 'x-model': opts.model } : {}),
+    // Narration clips are saved under absolute URLs built from the request's origin;
+    // build them for the public address so the phone can play them (not localhost).
+    ...publicOriginHeaders(),
   };
   const res = await fetch(`${opts.baseUrl}/api/generate-classroom`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ requirement: brief.requirement, pdfContent: { text: brief.notes, images: [] } }),
+    // enableTTS: narration is recorded when the lesson is built (the local Kokoro voice),
+    // instead of relying on the browser's own speech, which iOS keeps silent.
+    body: JSON.stringify({ requirement: brief.requirement, pdfContent: { text: brief.notes, images: [] }, enableTTS: true }),
   });
   const started = (await res.json()) as { success: boolean; jobId?: string; error?: string };
   if (!res.ok || !started.jobId) throw new Error(`Lesson generation rejected: ${started.error ?? res.status}`);

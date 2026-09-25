@@ -86,3 +86,14 @@ describe('transcribing a class again', () => {
     }
   });
 });
+
+describe('lesson narration', () => {
+  it('builds narration URLs for the public address, not localhost', async () => {
+    const { publicOriginHeaders } = await import('@/lib/sensei/lesson');
+    expect(publicOriginHeaders({ SENSEI_PUBLIC_URL: 'https://sensei.walkersnotary.com' } as NodeJS.ProcessEnv)).toEqual({
+      'x-forwarded-host': 'sensei.walkersnotary.com',
+      'x-forwarded-proto': 'https',
+    });
+    expect(publicOriginHeaders({} as NodeJS.ProcessEnv)).toEqual({});
+  });
+});
