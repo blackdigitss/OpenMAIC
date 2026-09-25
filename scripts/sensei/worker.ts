@@ -18,7 +18,7 @@ const once = process.argv.includes('--once');
 async function main() {
   const { senseiConfig } = await import('@/lib/sensei/config');
   const { senseiDb } = await import('@/lib/sensei/db/pool');
-  const { claimJob, enqueueLecture, recordedAtFromFile, runJob } = await import('@/lib/sensei/jobs');
+  const { claimJob, enqueueLecture, recordedAtFromFile, retryBillingFailures, runJob } = await import('@/lib/sensei/jobs');
   const { senseiLlm } = await import('@/lib/sensei/llm');
 
   const config = senseiConfig();
@@ -167,6 +167,9 @@ async function main() {
     await scanInbox().catch((e) => log(`inbox scan failed: ${e.message}`));
     await maybeSendDigest().catch((e) => log(`digest failed: ${e.message}`));
     await checkBudget().catch((e) => log(`budget check failed: ${e.message}`));
+    await retryBillingFailures(db)
+      .then((n) => n && log(`retrying ${n} lecture(s) that stopped for AI credits`))
+      .catch((e) => log(`billing retry failed: ${e.message}`));
     const { maybeTuneSpacing } = await import('@/lib/sensei/spacing');
     await maybeTuneSpacing(db)
       .then((s) => s && log(`spacing checked on ${s.observations} first reviews: ${s.w ? `tuned (${(s.improvement * 100).toFixed(1)}% better)` : 'defaults fit best'}`))
