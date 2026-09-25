@@ -76,6 +76,22 @@ function mergeShortSegments(units: SourceUnitInput[], targetMs = 30_000): Source
 
 const AUDIO_EXT = new Set(['.m4a', '.mp3', '.wav', '.aac', '.caf', '.ogg', '.flac', '.mp4', '.mov', '.webm']);
 
+/**
+ * A readable title from a file name: no upload prefix, no "_"/"-" runs, no trailing
+ * housekeeping words ("Tagged", "Final", "copy", "(1)"). Library files are named by
+ * their content hash, which is not a title (null).
+ */
+export function titleFromFile(path: string): string | null {
+  let t = basename(path, extname(path)).replace(/^\d{10,}-/, '');
+  if (/^[0-9a-f]{64}$/i.test(t)) return null;
+  t = t.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  for (let prev = ''; prev !== t; ) {
+    prev = t;
+    t = t.replace(/\s*(\(\d+\)|\btagged\b|\bfinal\b|\bcopy\b)\s*$/i, '').trim();
+  }
+  return t || null;
+}
+
 export function detectKind(path: string): SourceKind {
   const ext = extname(path).toLowerCase();
   if (ext === '.pdf') return 'slides';
@@ -111,7 +127,7 @@ export async function ingestReference(db: Db, path: string, config = senseiConfi
   const storedPath = join(config.libraryDir, `${hash}${extname(path).toLowerCase()}`);
   await mkdir(config.libraryDir, { recursive: true });
   if (!(await stat(storedPath).then(() => true, () => false))) await copyFile(path, storedPath);
-  const title = basename(path, extname(path)).replace(/[_-]+/g, ' ').replace(/^\d+\s+/, '').trim();
+  const title = (titleFromFile(path) ?? 'Reference').replace(/^\d+\s+/, '');
   const source = await registerSource(db, {
     sha256: hash, kind: 'textbook', courseId: null, title, originalName: basename(path), storedPath, metadata: { bytes: data.length },
   });
