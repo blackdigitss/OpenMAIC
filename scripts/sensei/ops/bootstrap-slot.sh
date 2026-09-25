@@ -10,7 +10,9 @@ git checkout -q --detach sensei
 link_shared "$SLOT_A"
 pnpm install --frozen-lockfile > "$LOGS/bootstrap.log" 2>&1
 node_modules/.bin/vitest run tests/sensei >> "$LOGS/bootstrap.log" 2>&1
+unlink_data "$SLOT_A"
 SENSEI_BUILD_SHA=$(git rev-parse --short HEAD) pnpm build >> "$LOGS/bootstrap.log" 2>&1
+link_shared "$SLOT_A"
 git rev-parse HEAD > "$SLOT_A/.sensei-good"
 ln -sfn "$SLOT_A" "$CURRENT"
 log "slot A live at $(git rev-parse --short HEAD)"

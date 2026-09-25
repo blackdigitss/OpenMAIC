@@ -52,3 +52,9 @@ link_shared() {
   ln -sfn "$LIB/openmaic-data" "$slot/data"
   ln -sfn "$ENV_FILE" "$slot/.env.local"
 }
+
+# Drop only the data link (never a real folder) so a build can't follow it outside the project.
+unlink_data() {
+  [ -L "$1/data" ] && rm "$1/data"
+  return 0
+}
