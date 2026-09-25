@@ -64,7 +64,7 @@ describe('fallback between providers', () => {
     const llm = senseiLlm(
       {
         home, libraryDir: home, cacheDir: join(home, 'cache'), inboxDir: home, databaseUrl: '',
-        googleApiKey: 'g', openaiApiKey: 'o',
+        googleApiKey: 'g', openaiApiKey: 'o', claudeBin: '/nonexistent/claude',
         fastModel: 'google:gemini-3.8-flash', strongModel: 'openai:gpt-5.6-sol,google:gemini-3.1-pro-preview', audioModel: 'google:gemini-3.1-pro-preview',
       },
       (m) => notices.push(m),
@@ -78,5 +78,56 @@ describe('fallback between providers', () => {
     // Cached: no new call.
     await llm.call({ schema, system: 's', prompt: 'two', tier: 'strong' });
     expect(calls).toHaveLength(3);
+  });
+});
+
+describe('Claude subscription route', () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'sensei-claude-'));
+    calls.length = 0;
+  });
+  afterEach(() => vi.resetModules());
+
+  async function fakeClaude(body: string) {
+    const { writeFile, chmod } = await import('fs/promises');
+    const bin = join(home, 'claude');
+    await writeFile(bin, `#!/bin/sh\ncat > /dev/null\ncat <<'JSON'\n${body}\nJSON\n`);
+    await chmod(bin, 0o755);
+    return bin;
+  }
+  const config = (claudeBin: string) => ({
+    home, libraryDir: home, cacheDir: join(home, 'cache'), inboxDir: home, databaseUrl: '',
+    googleApiKey: 'g', openaiApiKey: undefined, claudeBin,
+    fastModel: 'google:gemini-3.8-flash', strongModel: 'claude:opus,google:gemini-3.1-pro-preview', audioModel: 'google:gemini-3.1-pro-preview',
+  });
+  const schema = z.object({ answer: z.string() });
+
+  it('answers through the subscription without calling any API', async () => {
+    const { senseiLlm } = await import('@/lib/sensei/llm');
+    const bin = await fakeClaude('{"is_error":false,"structured_output":{"answer":"from claude"}}');
+    expect(await senseiLlm(config(bin)).call({ schema, system: 's', prompt: 'p', tier: 'strong' })).toEqual({ answer: 'from claude' });
+    expect(calls).toEqual([]);
+  });
+
+  it('falls through to Gemini when the plan limit is hit, and says so once', async () => {
+    const { senseiLlm } = await import('@/lib/sensei/llm');
+    const bin = await fakeClaude('{"is_error":true,"result":"Claude AI usage limit reached|1790300000"}');
+    const notices: string[] = [];
+    const llm = senseiLlm(config(bin), (m) => notices.push(m));
+    expect(await llm.call({ schema, system: 's', prompt: 'a', tier: 'strong' })).toEqual({ answer: 'ok' });
+    expect(await llm.call({ schema, system: 's', prompt: 'b', tier: 'strong' })).toEqual({ answer: 'ok' });
+    expect(calls).toEqual(['gemini-3.1-pro-preview', 'gemini-3.1-pro-preview']);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/Claude subscription/);
+  });
+
+  it('audio never goes to the subscription', async () => {
+    const { senseiLlm } = await import('@/lib/sensei/llm');
+    const bin = await fakeClaude('{"is_error":false,"structured_output":{"answer":"wrong"}}');
+    const out = await senseiLlm({ ...config(bin), audioModel: 'claude:opus,google:gemini-3.1-pro-preview' }).call({
+      schema, system: 's', prompt: 'p', tier: 'audio', file: { data: Buffer.from('x'), mediaType: 'audio/mpeg' },
+    });
+    expect(out).toEqual({ answer: 'ok' });
   });
 });

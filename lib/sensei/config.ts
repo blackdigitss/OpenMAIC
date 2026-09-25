@@ -15,6 +15,8 @@ export interface SenseiConfig {
   databaseUrl: string;
   googleApiKey: string | undefined;
   openaiApiKey: string | undefined;
+  /** Claude Code CLI, for routes that use your Claude subscription ("claude:opus"). */
+  claudeBin: string;
   /**
    * Model routes, each "provider:model" (google | openai), or a comma-separated list
    * tried in order: a provider that is out of credits or rejects the key falls
@@ -39,6 +41,7 @@ export function senseiConfig(env: NodeJS.ProcessEnv = process.env): SenseiConfig
     databaseUrl: env.SENSEI_DATABASE_URL ?? 'postgresql://localhost:5432/sensei',
     googleApiKey: env.SENSEI_GOOGLE_API_KEY || env.GOOGLE_API_KEY || undefined,
     openaiApiKey: env.SENSEI_OPENAI_API_KEY || env.OPENAI_API_KEY || undefined,
+    claudeBin: env.SENSEI_CLAUDE_BIN || join(homedir(), '.local', 'bin', 'claude'),
     fastModel: env.SENSEI_MODEL_FAST || 'google:gemini-3.8-flash',
     strongModel: env.SENSEI_MODEL_STRONG || 'google:gemini-3.1-pro-preview',
     audioModel: env.SENSEI_MODEL_AUDIO || 'google:gemini-3.1-pro-preview',
