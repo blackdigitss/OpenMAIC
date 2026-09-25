@@ -210,6 +210,16 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
         config,
       );
       deckSources.push(deck.sourceId);
+      // Slides saved as pictures have no text; read them visually first.
+      const { readPicturePages } = await import('./ocr');
+      if (await readPicturePages(db, deps.llm, deck.sourceId, path, deck.lectureId)) {
+        await progress(db, job.id, 'ingest', 0.05, 'Read slides that were pictures');
+      }
+      const { rows: text } = await db.query<{ n: number }>(
+        `SELECT coalesce(sum(length(text)), 0)::int AS n FROM sensei_source_unit WHERE source_id = $1`,
+        [deck.sourceId],
+      );
+      if (text[0].n < 40) throw new Error(`Couldn't find any readable text in “${deckTitle(path)}”.`);
       const { rows } = await db.query<{ status: string }>('SELECT status FROM sensei_lecture WHERE id = $1', [deck.lectureId]);
       if (rows[0]?.status !== 'ready') {
         report = await studyLecture(deps, job.id, deck.lectureId, { audio: [], stage: [0.05, 0.5] });
