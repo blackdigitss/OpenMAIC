@@ -475,10 +475,16 @@ async function lectureOwningFiles(db: Db, files: string[]): Promise<string | nul
  * partly written (crash mid-insert) is completed from its saved JSON instead of skipped.
  */
 async function restoreTranscript(db: Db, audioSourceId: string): Promise<boolean> {
+  // Only a transcript still attached to a lecture counts (a replaced one is detached).
   const { rows } = await db.query<{ id: string; stored_path: string; expected: string | null; have: string }>(
-    `SELECT s.id, s.stored_path, s.metadata->>'segments' AS expected,
+    `WITH RECURSIVE chain AS (
+       SELECT id FROM sensei_source WHERE derived_from = $1
+       UNION ALL SELECT s.id FROM sensei_source s JOIN chain c ON s.derived_from = c.id)
+     SELECT s.id, s.stored_path, s.metadata->>'segments' AS expected,
             (SELECT count(*) FROM sensei_source_unit u WHERE u.source_id = s.id) AS have
-       FROM sensei_source s WHERE s.derived_from = $1 ORDER BY s.created_at DESC LIMIT 1`,
+       FROM sensei_source s JOIN chain c ON c.id = s.id
+      WHERE s.kind = 'transcript' AND EXISTS (SELECT 1 FROM sensei_lecture_source ls WHERE ls.source_id = s.id)
+      ORDER BY s.created_at DESC LIMIT 1`,
     [audioSourceId],
   );
   const t = rows[0];
@@ -546,3 +552,23 @@ async function inferSlideRange(db: Db, lectureId: string, transcriptSourceId: st
 }
 
 export { detectKind };
+
+/**
+ * Transcribe a class again (e.g. an old transcript with gaps): its current transcript is
+ * detached from the lecture (kept in the library for history), and the lecture's job is
+ * queued so the recording is heard again and the facts are rebuilt from the new text.
+ */
+export async function retranscribeLecture(db: Db, lectureId: string): Promise<string | null> {
+  await db.query(
+    `DELETE FROM sensei_lecture_source ls USING sensei_source s
+      WHERE ls.lecture_id = $1 AND s.id = ls.source_id AND s.kind = 'transcript' AND s.derived_from IS NOT NULL`,
+    [lectureId],
+  );
+  const { rows } = await db.query<{ id: string }>(
+    `UPDATE sensei_job SET status = 'queued', error = NULL, detail = 'Listening again', updated_at = now()
+      WHERE id = (SELECT id FROM sensei_job WHERE lecture_id = $1 ORDER BY created_at DESC LIMIT 1)
+      RETURNING id`,
+    [lectureId],
+  );
+  return rows[0]?.id ?? null;
+}

@@ -72,6 +72,13 @@ async function main() {
       console.log('\n', report);
       break;
     }
+    case 'retranscribe': {
+      // Hear a class again with the current transcriber, and rebuild its facts.
+      const { retranscribeLecture } = await import('@/lib/sensei/jobs');
+      const job = await retranscribeLecture(db, args[0]);
+      console.log(job ? `Queued job ${job}; the worker will transcribe it again.` : 'No job found for that lecture.');
+      break;
+    }
     case 'notify': {
       // Used by the shell scripts (updater, backup): cli.ts notify failures "message"
       const { notifyStudent } = await import('@/lib/sensei/notify');
