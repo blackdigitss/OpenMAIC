@@ -77,7 +77,7 @@ export async function generateCards(db: Db, llm: StructuredLlm, conceptId: strin
     schema: CardsSchema,
     system: CARDS_SYSTEM,
     prompt: `Concept: ${concept[0].canonical_name}\n\n<records>\n${usable.map((r, i) => `R${i + 1} (${r.type}): ${r.statement}`).join('\n')}\n</records>`,
-    tier: 'fast',
+    tier: 'strong',
     purpose: 'cards',
   });
   for (const code of out.board_tasks) {

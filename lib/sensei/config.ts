@@ -14,10 +14,18 @@ export interface SenseiConfig {
   inboxDir: string;
   databaseUrl: string;
   googleApiKey: string | undefined;
-  /** Bulk extraction / classification. */
+  openaiApiKey: string | undefined;
+  /**
+   * Model routes, each "provider:model" (google | openai), or a comma-separated list
+   * tried in order: a provider that is out of credits or rejects the key falls
+   * through to the next, so adding credits later switches back automatically.
+   */
+  /** Quick, mechanical work: titles, tagging, answering questions in the app. */
   fastModel: string;
-  /** Transcription and verification of flagged clinical items. */
+  /** Work that decides what you learn: fact extraction, flashcards, textbook notes. */
   strongModel: string;
+  /** Listening to class recordings (needs a model that takes audio). */
+  audioModel: string;
 }
 
 export function senseiConfig(env: NodeJS.ProcessEnv = process.env): SenseiConfig {
@@ -30,7 +38,9 @@ export function senseiConfig(env: NodeJS.ProcessEnv = process.env): SenseiConfig
     inboxDir: resolve(env.SENSEI_INBOX ?? join(homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Sensei Inbox')),
     databaseUrl: env.SENSEI_DATABASE_URL ?? 'postgresql://localhost:5432/sensei',
     googleApiKey: env.SENSEI_GOOGLE_API_KEY || env.GOOGLE_API_KEY || undefined,
-    fastModel: env.SENSEI_MODEL_FAST ?? 'gemini-3.5-flash',
-    strongModel: env.SENSEI_MODEL_STRONG ?? 'gemini-3.1-pro-preview',
+    openaiApiKey: env.SENSEI_OPENAI_API_KEY || env.OPENAI_API_KEY || undefined,
+    fastModel: env.SENSEI_MODEL_FAST || 'google:gemini-3.8-flash',
+    strongModel: env.SENSEI_MODEL_STRONG || 'google:gemini-3.1-pro-preview',
+    audioModel: env.SENSEI_MODEL_AUDIO || 'google:gemini-3.1-pro-preview',
   };
 }

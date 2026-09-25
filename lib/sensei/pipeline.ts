@@ -145,7 +145,7 @@ export async function processLecture(
 ): Promise<LectureRunReport> {
   const { label, units, slideContext } = await lectureUnits(db, lectureId);
   const windows = buildWindows(units);
-  const runId = await startRun(db, lectureId, EXTRACT_PROMPT_VERSION, llm.modelName('fast'));
+  const runId = await startRun(db, lectureId, EXTRACT_PROMPT_VERSION, llm.modelName('strong'));
   const report: LectureRunReport = {
     runId, windows: windows.length, recordsWritten: 0, recordsNew: 0, recordsFlagged: 0,
     recordsRejected: [], conceptsCreated: 0, relations: 0, superseded: { evidence: 0, records: 0 },
@@ -158,7 +158,7 @@ export async function processLecture(
         schema: ExtractionSchema,
         system: EXTRACT_SYSTEM,
         prompt: buildExtractionPrompt(window, candidates, label, slideContext),
-        tier: 'fast',
+        tier: 'strong',
         purpose: 'extract',
         lectureId,
       });
