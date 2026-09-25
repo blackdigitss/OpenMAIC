@@ -59,3 +59,30 @@ describe('Claude bridge', () => {
     expect(callCost('claude-opus', 1_000_000, 1_000_000)).toBe(0);
   });
 });
+
+describe('transcribing a class again', () => {
+  it('detaches the current transcript (kept for history) and queues the lecture', async () => {
+    const { testDb } = await import('./helpers');
+    const { retranscribeLecture } = await import('@/lib/sensei/jobs');
+    const { ensureCourse, ensureLecture, linkLectureSource, registerSource, sha256 } = await import('@/lib/sensei/store');
+    const db = await testDb();
+    try {
+      const course = await ensureCourse(db, 'RESP 101A', 'RC1');
+      const lectureId = await ensureLecture(db, { courseId: course, date: '2026-09-17', title: 'Lab 9/17' });
+      const audio = await registerSource(db, { sha256: sha256('a'), kind: 'audio', courseId: course, title: 'a', originalName: 'a.m4a', storedPath: '/a' });
+      const old = await registerSource(db, { sha256: sha256('t'), kind: 'transcript', courseId: null, title: 'Transcript', originalName: 't', storedPath: '/t', derivedFrom: audio.id });
+      await linkLectureSource(db, lectureId, audio.id);
+      await linkLectureSource(db, lectureId, old.id);
+      await db.query(`INSERT INTO sensei_job (status, input, lecture_id, detail) VALUES ('failed', '{"files":[]}', $1, 'x')`, [lectureId]);
+      expect(await retranscribeLecture(db, lectureId)).not.toBeNull();
+      const { rows: links } = await db.query<{ source_id: string }>('SELECT source_id FROM sensei_lecture_source WHERE lecture_id = $1', [lectureId]);
+      expect(links.map((l) => l.source_id)).toEqual([audio.id]);
+      const { rows: kept } = await db.query('SELECT 1 FROM sensei_source WHERE id = $1', [old.id]);
+      expect(kept).toHaveLength(1);
+      const { rows: job } = await db.query<{ status: string }>('SELECT status FROM sensei_job');
+      expect(job[0].status).toBe('queued');
+    } finally {
+      await db.close();
+    }
+  });
+});
