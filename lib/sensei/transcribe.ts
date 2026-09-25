@@ -187,7 +187,7 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
           schema: TranscriptChunkSchema,
           system: TRANSCRIBE_SYSTEM,
           prompt: `Clip ${i + 1} of ${chunks.length}. Timestamps start at 0:00 for THIS clip.${attempt ? ' Previous attempt was rejected; be careful with timestamps and do not repeat text.' : ''}\n\n<slides>\n${slideContext || '(no slides)'}\n</slides>`,
-          tier: 'strong',
+          tier: 'audio',
           file: { data, mediaType: 'audio/mpeg' },
           purpose: 'transcribe',
           lectureId: input.lectureId,
@@ -205,7 +205,7 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
   }
 
   // Store the transcript as a derived source (versioned: a re-transcription derives from the previous version).
-  const body = JSON.stringify({ promptVersion: TRANSCRIBE_PROMPT_VERSION, model: llm.modelName('strong'), units });
+  const body = JSON.stringify({ promptVersion: TRANSCRIBE_PROMPT_VERSION, model: llm.modelName('audio'), units });
   const hash = sha256(body);
   await mkdir(config.libraryDir, { recursive: true });
   const storedPath = join(config.libraryDir, `${hash}.transcript.json`);
@@ -270,7 +270,7 @@ export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: st
         schema: ClipSchema,
         system: 'Transcribe this short clip of a respiratory therapy lecture verbatim. Write numbers as digits with units exactly as spoken. Do not guess unclear words; write [unclear].',
         prompt: 'Transcribe the clip.',
-        tier: 'strong',
+        tier: 'audio',
         purpose: 'verify',
         lectureId,
         file: { data, mediaType: 'audio/mpeg' },

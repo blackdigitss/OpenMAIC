@@ -58,7 +58,7 @@ export async function fillGap(db: Db, llm: StructuredLlm, concept: { id: string;
     prompt:
       `Concept: ${concept.name}\n\n<course_facts>\n${facts.map((f) => `- ${f.statement}`).join('\n') || '(none)'}\n</course_facts>\n\n` +
       `<textbook>\n${passages.map((p) => `[${p.ref}] ${p.book}, ${p.cite}: ${p.text}`).join('\n\n')}\n</textbook>`,
-    tier: 'fast',
+    tier: 'strong',
     purpose: 'gaps',
   });
   const used = passages.filter((p) => out.refs.includes(p.ref));

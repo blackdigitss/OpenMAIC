@@ -57,11 +57,36 @@ export async function courseFromSchedule(db: Db, at: Date): Promise<string | nul
   return rows[0]?.code ?? null;
 }
 
+/**
+ * A class date written in the file name ("Resp. Lab 9-21.m4a", "Vital Signs 9.24.26.pdf").
+ * It wins over file timestamps, which are when the file was exported or uploaded, not
+ * when class happened. Dates in the future are taken as last year's.
+ */
+export function dateFromFilename(path: string, now = new Date()): string | null {
+  const name = basename(path, extname(path)).replace(/^\d{10,}-/, '');
+  const m = name.match(/(?:^|[^\d])(\d{1,2})[-_./](\d{1,2})(?:[-_./](\d{2}|\d{4}))?(?!\d)/);
+  if (!m) return null;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  let year = m[3] ? Number(m[3].length === 2 ? `20${m[3]}` : m[3]) : now.getFullYear();
+  const d = new Date(year, month - 1, day);
+  if (d.getMonth() !== month - 1) return null;
+  if (!m[3] && d.getTime() > now.getTime() + 2 * 86_400_000) year--;
+  return localDate(new Date(year, month - 1, day));
+}
+
 export async function enqueueLecture(db: Db, input: JobInput): Promise<{ jobId: string; status: string }> {
   let courseCode = input.courseCode ?? null;
   const at = input.recordedAt ? new Date(input.recordedAt) : new Date();
-  if (!courseCode && !input.bookOnly) courseCode = await courseFromSchedule(db, at);
-  const date = input.date ?? localDate(at);
+  const named = input.files.length === 1 ? dateFromFilename(input.files[0]) : null;
+  if (!courseCode && !input.bookOnly && !named) courseCode = await courseFromSchedule(db, at);
+  if (!courseCode && !input.bookOnly) {
+    // With a single class set up there's nothing to ask.
+    const { rows } = await db.query<{ code: string }>('SELECT code FROM sensei_course ORDER BY created_at LIMIT 2');
+    if (rows.length === 1) courseCode = rows[0].code;
+  }
+  const date = input.date ?? named ?? localDate(at);
   const status = courseCode || input.bookOnly ? 'queued' : 'needs_course';
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO sensei_job (status, input, detail) VALUES ($1, $2, $3) RETURNING id`,
@@ -404,9 +429,18 @@ async function ensureDeck(db: Db, lectureId: string): Promise<{ id: string; auto
     [lectureId],
   );
   if (own[0]) return { id: own[0].id, auto: false };
+  // The deck being taught then: the newest one dated on or before this class (so recordings
+  // uploaded late still pair with the right slides), else the newest deck.
   const { rows } = await db.query<{ id: string }>(
-    `SELECT s.id FROM sensei_source s JOIN sensei_lecture l ON l.course_id = s.course_id
-      WHERE l.id = $1 AND s.kind = 'slides' ORDER BY s.created_at DESC LIMIT 1`,
+    `SELECT s.id FROM sensei_lecture l
+       JOIN sensei_lecture d ON d.course_id = l.course_id AND d.kind = 'deck'
+       JOIN sensei_lecture_source ls ON ls.lecture_id = d.id
+       JOIN sensei_source s ON s.id = ls.source_id AND s.kind = 'slides'
+      WHERE l.id = $1
+      ORDER BY (d.lecture_date <= l.lecture_date) DESC,
+               CASE WHEN d.lecture_date <= l.lecture_date THEN d.lecture_date END DESC NULLS LAST,
+               d.lecture_date DESC, s.created_at DESC
+      LIMIT 1`,
     [lectureId],
   );
   if (!rows[0]) return null;

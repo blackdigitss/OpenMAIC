@@ -19,13 +19,17 @@ async function main() {
   const { senseiConfig } = await import('@/lib/sensei/config');
   const { senseiDb } = await import('@/lib/sensei/db/pool');
   const { claimJob, enqueueLecture, recordedAtFromFile, runJob } = await import('@/lib/sensei/jobs');
-  const { geminiLlm } = await import('@/lib/sensei/llm');
+  const { senseiLlm } = await import('@/lib/sensei/llm');
 
   const config = senseiConfig();
   const db = await senseiDb();
-  const llm = geminiLlm(config);
   const appUrl = process.env.SENSEI_APP_URL ?? 'http://localhost:3000';
   const { notifyStudent } = await import('@/lib/sensei/notify');
+  // A provider out of credits falls through to the next model; say so once, not per call.
+  const llm = senseiLlm(config, (message) => {
+    log(message);
+    void notifyStudent(db, 'failures', { title: 'Sensei switched models', body: message, tag: 'model' }).catch(() => undefined);
+  });
   const { getSettings, getState, setState } = await import('@/lib/sensei/settings');
   const notify = async (kind: 'ready' | 'failed', message: string) => {
     log(message);
@@ -91,6 +95,7 @@ async function main() {
   const processed = join(config.home, 'staging');
   await mkdir(processed, { recursive: true });
 
+  const ignored = new Set<string>();
   async function scanInbox() {
     const names = await readdir(config.inboxDir).catch(() => [] as string[]);
     for (const name of names) {
@@ -109,6 +114,31 @@ async function main() {
         continue;
       }
       const ext = extname(name).toLowerCase();
+      if (OFFICE_EXT.has(ext)) {
+        // PowerPoint decks become PDFs (LibreOffice, headless); the PDF is what Sensei reads.
+        const out = join(processed, 'converted');
+        await mkdir(join(processed, 'originals'), { recursive: true });
+        try {
+          await convertToPdf(path, out);
+        } catch (e) {
+          if (!ignored.has(path)) log(`inbox: couldn't convert ${name} to PDF: ${(e as Error).message.split('\n')[0]}`);
+          ignored.add(path);
+          continue;
+        }
+        const pdf = join(out, `${basename(name, extname(name))}.pdf`);
+        const dest = join(processed, `${Date.now()}-${basename(pdf)}`);
+        await rename(pdf, dest);
+        await rename(path, join(processed, 'originals', `${Date.now()}-${name}`));
+        seen.delete(path);
+        const job = await enqueueLecture(db, { files: [dest], recordedAt: s.birthtimeMs || s.mtimeMs });
+        log(`inbox: ${name} → PDF → job ${job.jobId} (${job.status})`);
+        continue;
+      }
+      if (!SUPPORTED_EXT.has(ext)) {
+        if (!ignored.has(path)) log(`inbox: skipping ${name} (Sensei reads PDF, PowerPoint, audio and .txt/.vtt/.srt transcripts)`);
+        ignored.add(path);
+        continue;
+      }
       if (ext !== '.pdf' && !['.txt', '.vtt', '.srt'].includes(ext)) {
         try {
           await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path]);
@@ -173,3 +203,22 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+const OFFICE_EXT = new Set(['.ppt', '.pptx', '.odp']);
+const SUPPORTED_EXT = new Set(['.pdf', '.txt', '.vtt', '.srt', '.m4a', '.mp3', '.wav', '.aac', '.caf', '.ogg', '.flac', '.mp4', '.mov', '.webm']);
+
+async function convertToPdf(path: string, outDir: string): Promise<void> {
+  await mkdir(outDir, { recursive: true });
+  const bins = ['soffice', '/usr/local/bin/soffice', '/Applications/LibreOffice.app/Contents/MacOS/soffice'];
+  let last: unknown = null;
+  for (const bin of bins) {
+    try {
+      await run(bin, ['--headless', '--convert-to', 'pdf', '--outdir', outDir, path], { timeout: 10 * 60_000 });
+      return;
+    } catch (e) {
+      last = e;
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') break;
+    }
+  }
+  throw last;
+}
