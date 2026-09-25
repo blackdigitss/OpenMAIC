@@ -434,6 +434,12 @@ CREATE TABLE sensei_reel (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 `,
+  },  {
+    id: '0010_card_payload',
+    sql: `
+-- Structured card content, e.g. a multiple-choice question: {kind:'mcq', options, answer, rationale, source, note}.
+ALTER TABLE sensei_card ADD COLUMN payload JSONB;
+`,
   },
 ];
 

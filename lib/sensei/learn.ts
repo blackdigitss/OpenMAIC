@@ -117,7 +117,23 @@ export interface DueCard {
   formulaId: string | null;
   /** Set for case cards: a new scenario is generated from this family. */
   caseFamily: string | null;
+  /** Structured content, e.g. a multiple-choice question from a practice set. */
+  payload: CardPayload | null;
 }
+
+export interface McqPayload {
+  kind: 'mcq';
+  options: string[];
+  /** Index of the correct option. */
+  answer: number;
+  rationale: string[];
+  /** Where the question came from, e.g. "Module 1 practice guide". */
+  source?: string;
+  /** Shown when the course's own facts differ from the question's answer. */
+  note?: string;
+}
+
+export type CardPayload = McqPayload;
 
 function toMemory(r: Record<string, unknown>): CardMemory {
   return {
@@ -157,6 +173,7 @@ export async function dueCards(db: Db, opts: { limit?: number; newLimit?: number
     isNew: Number(r.state) === CardState.New,
     formulaId: (r.formula_id as string) ?? null,
     caseFamily: (r.case_family as string) ?? null,
+    payload: (r.payload as CardPayload) ?? null,
   }));
 }
 
