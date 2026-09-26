@@ -33,6 +33,10 @@ other way; Sensei code lives in `lib/sensei`, `components/sensei`, `app/sensei`,
 - Knowledge is append-only with supersede-on-rerun; ids are content keys so re-runs are idempotent.
 
 ## Major changes (newest first). Add an entry for anything that changes architecture, data flow or where work runs.
+- 2026-09-26: CRITICAL: the Claude CLI bills ANTHROPIC_API_KEY instead of the subscription whenever that variable is
+  in its environment. sensei.env holds an Anthropic key (for OpenMAIC live chat), and it silently turned all
+  subscription work into paid API usage (~$10 in one afternoon). `subscriptionEnv()` in llm.ts strips Anthropic
+  credentials from every CLI spawn. Never spawn `claude` without it.
 - 2026-09-26: lessons TEACH, they don't narrate: no provenance labels, no Sensei brief, no agenda/app/module talk.
   Private markers ([stressed in class], [the professor's story]) steer emphasis; the professor teaches in first person
   with brief knowing asides; labs are taught by "the lab instructor" (the lab instructor is not the module professor).
