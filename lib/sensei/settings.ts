@@ -16,6 +16,8 @@ export const SETTING_DEFAULTS = {
    * 'cloud' = OpenAI whisper-1 + OpenAI voice (paid, no load). The other is the automatic backup.
    */
   audioEngine: 'local',
+  /** Who voices lessons: Kokoro on this Mac, ElevenLabs (the professor; classmates stay on Kokoro), or OpenAI. */
+  lessonVoice: 'kokoro',
 } as const;
 
 export type Settings = {
@@ -25,12 +27,16 @@ export type Settings = {
   pauseAtBudget: boolean;
   personalSpacing: boolean;
   audioEngine: 'local' | 'cloud';
+  lessonVoice: 'kokoro' | 'elevenlabs' | 'openai';
 };
 
 /** The voice service reads the engine from this file (it has no database connection). */
 export function audioEngineFile(home: string): string {
   return `${home}/settings/audio-engine`;
 }
+
+/** Settings the voice service reads from files (it has no database connection). */
+export const VOICE_SETTING_FILES: Record<string, string> = { audioEngine: 'audio-engine', lessonVoice: 'lesson-voice' };
 
 export async function getSettings(db: Db): Promise<Settings> {
   const { rows } = await db.query<{ key: string; value: unknown }>('SELECT key, value FROM sensei_setting');

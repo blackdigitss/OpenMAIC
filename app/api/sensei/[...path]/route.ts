@@ -184,6 +184,11 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         return streamAudio(req, id);
       case 'spacing':
         return ok(await spacingStatus(db));
+      case 'voice': {
+        // Lesson voice engines and ElevenLabs credits, from the voice service.
+        const r = await fetch('http://127.0.0.1:13305/v1/status').then((x) => x.json()).catch(() => null);
+        return ok(r ?? { lessonVoice: 'kokoro', elevenlabs: null, openai: false, down: true });
+      }
       case 'reels': {
         if (id && UUID.test(id)) {
           const { rows } = await db.query<{ file: string | null }>(`SELECT file FROM sensei_reel WHERE id = $1 AND status = 'ready'`, [id]);
@@ -282,16 +287,17 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           pauseAtBudget: (v) => typeof v === 'boolean',
           personalSpacing: (v) => typeof v === 'boolean',
           audioEngine: (v) => v === 'local' || v === 'cloud',
+          lessonVoice: (v) => v === 'kokoro' || v === 'elevenlabs' || v === 'openai',
         };
         for (const [k, v] of Object.entries(body)) {
           if (!allowed[k]?.(v)) return fail(400, `Bad setting ${k}`);
           await setSetting(db, k, v);
-          if (k === 'audioEngine') {
-            const { audioEngineFile } = await import('@/lib/sensei/settings');
+          const { VOICE_SETTING_FILES } = await import('@/lib/sensei/settings');
+          if (VOICE_SETTING_FILES[k]) {
             const { mkdir: mk, writeFile: wf } = await import('fs/promises');
-            const file = audioEngineFile(senseiConfig().home);
-            await mk(file.replace(/\/[^/]+$/, ''), { recursive: true });
-            await wf(file, String(v));
+            const dir = join(senseiConfig().home, 'settings');
+            await mk(dir, { recursive: true });
+            await wf(join(dir, VOICE_SETTING_FILES[k]), String(v));
           }
         }
         return ok(await getSettings(db));

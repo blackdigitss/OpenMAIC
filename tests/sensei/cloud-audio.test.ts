@@ -105,3 +105,11 @@ describe('lessons on request and the audio setting', () => {
     }
   });
 });
+
+describe('lesson voice setting', () => {
+  it('defaults to the Mac voice and maps both voice settings to files the voice service reads', async () => {
+    const { SETTING_DEFAULTS, VOICE_SETTING_FILES } = await import('@/lib/sensei/settings');
+    expect(SETTING_DEFAULTS.lessonVoice).toBe('kokoro');
+    expect(VOICE_SETTING_FILES).toEqual({ audioEngine: 'audio-engine', lessonVoice: 'lesson-voice' });
+  });
+});

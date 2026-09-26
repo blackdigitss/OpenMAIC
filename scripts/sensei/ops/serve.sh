@@ -17,8 +17,10 @@ case "$1" in
   gate) exec node_modules/.bin/tsx scripts/sensei/gate.ts ;;
   bridge) exec node_modules/.bin/tsx scripts/sensei/claude-bridge.ts ;;
   voice)
-    # The cloud voice (Settings → Audio processing, or backup) needs the OpenAI key.
-    SENSEI_OPENAI_API_KEY="$(envget SENSEI_OPENAI_API_KEY)" exec "$LIB/tools/kokoro/venv/bin/python" scripts/sensei/voice-server.py ;;
+    # Cloud voices and speech-to-text (Settings, or as backup) need their keys.
+    SENSEI_OPENAI_API_KEY="$(envget SENSEI_OPENAI_API_KEY)" ELEVENLABS_API_KEY="$(envget ELEVENLABS_API_KEY)" \
+    ELEVENLABS_PROFESSOR_VOICE_ID="$(envget ELEVENLABS_PROFESSOR_VOICE_ID)" \
+      exec "$LIB/tools/kokoro/venv/bin/python" scripts/sensei/voice-server.py ;;
   backup) exec node_modules/.bin/tsx scripts/sensei/cli.ts backup ;;
   *) echo "usage: serve.sh app|worker|gate|bridge|voice|backup"; exit 2 ;;
 esac

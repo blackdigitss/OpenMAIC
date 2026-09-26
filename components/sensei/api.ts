@@ -27,6 +27,7 @@ export interface SettingsData {
   pauseAtBudget: boolean;
   personalSpacing: boolean;
   audioEngine: 'local' | 'cloud';
+  lessonVoice: 'kokoro' | 'elevenlabs' | 'openai';
   pushDevices: number;
   pushKey: string | null;
   lastBackup: { at: string } | null;

@@ -33,6 +33,13 @@ other way; Sensei code lives in `lib/sensei`, `components/sensei`, `app/sensei`,
 - Knowledge is append-only with supersede-on-rerun; ids are content keys so re-runs are idempotent.
 
 ## Major changes (newest first). Add an entry for anything that changes architecture, data flow or where work runs.
+- 2026-09-26: lessons taught by the professor (first person, present tense, knowing asides, the professor's own
+  quotes as VOICE SAMPLES) and tied to Sensei (exam timing, NBRC tasks, drills, calcs, textbook disagreements,
+  what to do next); `agentMode: 'generate'` for English classmates. Voice service (`voice-server.py`) now also does
+  speech-to-text for the lesson mic (ElevenLabs Scribe → local whisper → OpenAI) and a Lesson voice setting
+  (Kokoro / ElevenLabs for the professor only, credit reserve 10% / OpenAI). In-lesson chat uses OpenMAIC's legacy
+  tool-less `/api/chat` (`NEXT_PUBLIC_PI_CHAT_ENABLED=false`, build time) because the Claude bridge has no tool calls;
+  browser speech is disabled (`TTS_/ASR_BROWSER_NATIVE_ENABLED=false`) so the client uses the voice service.
 - 2026-09-25: lesson narration served correctly (OPENMAIC_CLASSROOMS_DIR real path); existing lessons narrated.
 - 2026-09-25: audio engine setting (local Whisper + Kokoro by default, OpenAI as backup or by choice); lessons on
   request (`POST /lesson/<lectureId>`, Library → Lessons tab, "Make a lesson" on any lecture or deck).

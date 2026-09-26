@@ -732,34 +732,61 @@ function BackupSection() {
   );
 }
 
-/** Where recordings are transcribed and lessons are voiced. */
+/** Where recordings are transcribed, and who voices lessons. */
 function AudioSection() {
   const { data: s, reload } = useApi<SettingsData>('settings');
+  const { data: v } = useApi<{ lessonVoice: string; elevenlabs: { used: number; limit: number } | null; openai: boolean }>('voice');
   if (!s) return null;
-  const set = async (v: 'local' | 'cloud') => {
-    await api('settings', { method: 'POST', body: JSON.stringify({ audioEngine: v }) });
+  const save = async (patch: Partial<SettingsData>) => {
+    await api('settings', { method: 'POST', body: JSON.stringify(patch) });
     void reload();
   };
+  const el = v?.elevenlabs;
+  const left = el && el.limit ? Math.max(0, el.limit - el.used) : null;
   return (
-    <Section
-      title="Audio processing"
-      footer={
-        s.audioEngine === 'local'
-          ? 'Recordings are transcribed and lessons are voiced on your Mac: free, but it works hard for a while after each class. OpenAI steps in automatically if anything fails.'
-          : 'Recordings are transcribed and lessons are voiced by OpenAI: no load on your Mac, about $0.55 per 1½-hour class and $0.20 per lesson. Your Mac steps in automatically if OpenAI fails.'
-      }
-    >
-      <div style={{ margin: '0 16px' }}>
-        <Segmented
-          options={[
-            { value: 'local', label: 'On this Mac' },
-            { value: 'cloud', label: 'OpenAI' },
-          ]}
-          value={s.audioEngine}
-          onChange={(v) => void set(v)}
-        />
-      </div>
-    </Section>
+    <>
+      <Section
+        title="Transcription"
+        footer={
+          s.audioEngine === 'local'
+            ? 'Class recordings are transcribed on your Mac: free, but it works hard for a while after each class. OpenAI steps in if anything fails.'
+            : 'Class recordings are transcribed by OpenAI: no load on your Mac, about $0.55 per 1½-hour class. Your Mac steps in if OpenAI fails.'
+        }
+      >
+        <div style={{ margin: '0 16px' }}>
+          <Segmented
+            options={[
+              { value: 'local', label: 'On this Mac' },
+              { value: 'cloud', label: 'OpenAI' },
+            ]}
+            value={s.audioEngine}
+            onChange={(x) => void save({ audioEngine: x })}
+          />
+        </div>
+      </Section>
+      <Section
+        title="Lesson voice"
+        footer={
+          s.lessonVoice === 'elevenlabs'
+            ? `Your professor speaks in ElevenLabs quality; classmates use the Mac's voices to save credits. Sensei switches to the Mac's voice before credits run low.${left != null ? ` ${left.toLocaleString()} of ${el!.limit.toLocaleString()} credits left this month.` : el === null ? ' Add your ElevenLabs key to turn this on.' : ''}`
+            : s.lessonVoice === 'openai'
+              ? 'OpenAI voices everyone, about $0.20 per lesson. The Mac takes over if it fails.'
+              : 'Natural voices made on your Mac, free. Each classmate gets their own voice.'
+        }
+      >
+        <div style={{ margin: '0 16px' }}>
+          <Segmented
+            options={[
+              { value: 'kokoro', label: 'This Mac' },
+              { value: 'elevenlabs', label: 'ElevenLabs' },
+              { value: 'openai', label: 'OpenAI' },
+            ]}
+            value={s.lessonVoice}
+            onChange={(x) => void save({ lessonVoice: x })}
+          />
+        </div>
+      </Section>
+    </>
   );
 }
 
