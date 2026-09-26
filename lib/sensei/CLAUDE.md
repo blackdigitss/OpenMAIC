@@ -33,6 +33,7 @@ other way; Sensei code lives in `lib/sensei`, `components/sensei`, `app/sensei`,
 - Knowledge is append-only with supersede-on-rerun; ids are content keys so re-runs are idempotent.
 
 ## Major changes (newest first). Add an entry for anything that changes architecture, data flow or where work runs.
+- 2026-09-25: lesson narration served correctly (OPENMAIC_CLASSROOMS_DIR real path); existing lessons narrated.
 - 2026-09-25: audio engine setting (local Whisper + Kokoro by default, OpenAI as backup or by choice); lessons on
   request (`POST /lesson/<lectureId>`, Library → Lessons tab, "Make a lesson" on any lecture or deck).
 - 2026-09-25: codebase-memory-mcp code graph + ADR; standing agent brief (`brief.ts`); per-clip saved reel audio.
@@ -47,6 +48,9 @@ other way; Sensei code lives in `lib/sensei`, `components/sensei`, `app/sensei`,
 - Deploy with `zsh scripts/sensei/ops/update.sh` (refuses while a lecture is processing; verifies the live app and
   rolls back). The `sensei` branch has Vercel deployments disabled; don't push branches that lack that.
 - Migrations: append to `lib/sensei/db/migrations.ts` (numbered, additive).
+- `OPENMAIC_CLASSROOMS_DIR` in sensei.env must be the real path of `Library/openmaic-data/classrooms`: each slot's
+  `data/` is a link into Library, and OpenMAIC's media route rejects files whose real path differs (lesson audio and
+  images would 404).
 
 ## Code knowledge graph (codebase-memory-mcp)
 - This repo is indexed by the `codebase-memory` MCP server (installed for Claude Code, 2026-09-25). Prefer its
