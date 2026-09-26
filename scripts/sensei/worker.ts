@@ -166,9 +166,12 @@ async function main() {
     await scanInbox().catch(() => undefined);
     await new Promise((r) => setTimeout(r, 1500));
   }
+  // Heartbeat on a timer, not per loop: a long job (an hour of transcription) must not
+  // look like a stopped worker. The app warns only if this goes stale.
+  const beat = () => void writeFile(join(config.home, 'worker-heartbeat'), new Date().toISOString()).catch(() => undefined);
+  beat();
+  setInterval(beat, 60_000).unref();
   for (;;) {
-    // Heartbeat: the app shows a warning if this goes stale (worker stopped).
-    await writeFile(join(config.home, 'worker-heartbeat'), new Date().toISOString()).catch(() => undefined);
     await scanInbox().catch((e) => log(`inbox scan failed: ${e.message}`));
     await maybeSendDigest().catch((e) => log(`digest failed: ${e.message}`));
     await checkBudget().catch((e) => log(`budget check failed: ${e.message}`));

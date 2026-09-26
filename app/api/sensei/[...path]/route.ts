@@ -388,7 +388,11 @@ async function systemStatus() {
   const config = senseiConfig();
   const beat = await stat(join(config.home, 'worker-heartbeat')).then((s) => s.mtimeMs, () => null);
   const update = await readFile(join(config.home, 'update-status.json'), 'utf8').then((t) => JSON.parse(t) as { state: string; message: string; at: string }, () => null);
-  return { workerAlive: beat != null && Date.now() - beat < 5 * 60_000, workerSeen: beat != null, update };
+  // A job that reported progress recently also proves the worker is alive (it may be deep in a long step).
+  const db = await senseiDb();
+  const { rows } = await db.query<{ n: string }>(`SELECT count(*) AS n FROM sensei_job WHERE status = 'running' AND updated_at > now() - interval '10 minutes'`);
+  const busy = Number(rows[0]?.n ?? 0) > 0;
+  return { workerAlive: busy || (beat != null && Date.now() - beat < 5 * 60_000), workerSeen: beat != null || busy, update };
 }
 
 /** Stream lecture audio with HTTP Range support so iOS can seek to a timestamp. */
