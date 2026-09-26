@@ -148,9 +148,23 @@ export async function claudeCliComplete(
   return (await runClaude(bin, args, opts.prompt, tmpdir(), opts.timeoutMs ?? 15 * 60_000, true)) as ClaudeCliResult;
 }
 
+/**
+ * The Claude CLI bills an API key instead of the Claude subscription whenever one is in
+ * its environment ("ANTHROPIC_API_KEY takes precedence over your claude.ai login").
+ * sensei.env has an Anthropic key for OpenMAIC's live chat, so every CLI run gets an
+ * environment without Anthropic credentials: it can only ever use the subscription.
+ */
+export function subscriptionEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const clean = { ...env };
+  for (const k of Object.keys(clean)) {
+    if (/^ANTHROPIC_(API_KEY|AUTH_TOKEN|BASE_URL|MODEL|SMALL_FAST_MODEL)$/.test(k) || /^CLAUDE_CODE_USE_(BEDROCK|VERTEX)$/.test(k)) delete clean[k];
+  }
+  return clean;
+}
+
 function runClaude(bin: string, args: string[], prompt: string, cwd: string, timeoutMs: number, full = false): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(bin, args, { cwd, env: subscriptionEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs);

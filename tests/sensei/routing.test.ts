@@ -162,3 +162,31 @@ describe('running out of AI credits', () => {
     }
   });
 });
+
+describe('Claude subscription runs never see an API key', () => {
+  it('removes Anthropic credentials from the CLI environment and keeps everything else', async () => {
+    const { subscriptionEnv } = await import('@/lib/sensei/llm');
+    const env = subscriptionEnv({ ANTHROPIC_API_KEY: 'sk-ant', ANTHROPIC_AUTH_TOKEN: 't', ANTHROPIC_BASE_URL: 'x', HOME: '/h', PATH: '/p', OPENAI_API_KEY: 'o' } as unknown as NodeJS.ProcessEnv);
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env).toMatchObject({ HOME: '/h', PATH: '/p', OPENAI_API_KEY: 'o' });
+  });
+
+  it('the fake CLI sees no key even when the parent process has one', async () => {
+    const { writeFile, chmod, mkdtemp } = await import('fs/promises');
+    const { tmpdir } = await import('os');
+    const home = await mkdtemp(join(tmpdir(), 'sensei-env-'));
+    const bin = join(home, 'claude');
+    await writeFile(bin, '#!/bin/sh\ncat > /dev/null\nif [ -n "$ANTHROPIC_API_KEY" ]; then echo \'{"is_error":false,"structured_output":{"answer":"LEAKED"}}\'; else echo \'{"is_error":false,"structured_output":{"answer":"clean"}}\'; fi\n');
+    await chmod(bin, 0o755);
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+    try {
+      const { claudeSubscriptionCall } = await import('@/lib/sensei/llm');
+      const out = await claudeSubscriptionCall(bin, 'opus', { schema: z.object({ answer: z.string() }), system: 's', prompt: 'p', tier: 'strong' });
+      expect(out).toEqual({ answer: 'clean' });
+    } finally {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
+  });
+});
