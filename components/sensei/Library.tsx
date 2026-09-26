@@ -2,7 +2,7 @@
 
 import { useDeferredValue, useMemo, useState } from 'react';
 
-import { fmtDate, fmtTime, relDay, useApi, type GlossaryEntry, type LectureSummary, type LectureView } from './api';
+import { api, fmtDate, fmtTime, invalidate, relDay, useApi, type GlossaryEntry, type LectureSummary, type LectureView } from './api';
 import { PlayIcon, SearchIcon } from './icons';
 import { useSensei } from './store';
 import { TermText } from './TermText';
@@ -10,13 +10,13 @@ import { BoardMap } from './Board';
 import { CourseTag, Row, Screen, Section, Segmented, Skeleton } from './ui';
 
 export function Library() {
-  const { openConcept, push } = useSensei();
-  const [mode, setMode] = useState<'concepts' | 'lectures' | 'board'>('concepts');
+  const { openConcept, push, openSheet } = useSensei();
+  const [mode, setMode] = useState<'concepts' | 'lectures' | 'lessons' | 'board'>('concepts');
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
   const { data: all } = useApi<GlossaryEntry[]>('glossary');
   const { data: found } = useApi<GlossaryEntry[]>(query ? `glossary?q=${encodeURIComponent(query)}` : null);
-  const { data: lectures } = useApi<LectureSummary[]>(mode === 'lectures' ? 'lectures' : null);
+  const { data: lectures } = useApi<LectureSummary[]>(mode === 'lectures' || mode === 'lessons' ? 'lectures' : null);
   const { data: books } = useApi<{ id: string; title: string; pages: number }[]>(mode === 'lectures' ? 'textbooks' : null);
 
   const sections = useMemo(() => {
@@ -56,6 +56,7 @@ export function Library() {
           options={[
             { value: 'concepts', label: 'Concepts' },
             { value: 'lectures', label: 'Lectures' },
+            { value: 'lessons', label: 'Lessons' },
             { value: 'board', label: 'Board exam' },
           ]}
           value={mode}
@@ -81,6 +82,34 @@ export function Library() {
         </Section>
       ) : mode === 'board' ? (
         <BoardMap />
+      ) : mode === 'lessons' ? (
+        !lectures ? (
+          <Section>
+            <Skeleton lines={4} />
+          </Section>
+        ) : (
+          <Section footer="Every class recording gets a lesson automatically. For slides or older classes, open the lecture and tap Make a lesson.">
+            {lectures.some((l) => l.classroomUrl) ? (
+              <div className="s-list">
+                {lectures
+                  .filter((l) => l.classroomUrl)
+                  .map((l) => (
+                    <Row
+                      key={l.id}
+                      title={l.title}
+                      sub={fmtDate(l.date, { weekday: 'short', month: 'short', day: 'numeric' })}
+                      trailing={<PlayIcon style={{ width: 14, height: 14, color: 'var(--tint)' }} />}
+                      onClick={() => openSheet({ kind: 'lesson', url: l.classroomUrl!, title: l.title })}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <p className="s-foot" style={{ textAlign: 'center', paddingTop: 24 }}>
+                Lessons appear here after a class is processed.
+              </p>
+            )}
+          </Section>
+        )
       ) : mode === 'concepts' ? (
         !all ? (
           <Section>
@@ -188,10 +217,12 @@ export function LecturePage({ id }: { id: string }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: 10, margin: '14px 16px 0' }}>
-        {l.classroomUrl && (
+        {l.classroomUrl ? (
           <button className="s-btn" onClick={() => openSheet({ kind: 'lesson', url: l.classroomUrl!, title: l.title })}>
             Start lesson
           </button>
+        ) : (
+          l.status === 'ready' && <MakeLesson lectureId={l.id} />
         )}
         {data.audioSourceId && (
           <button className={`s-btn${l.classroomUrl ? ' gray' : ''}`} onClick={() => listen(0)}>
@@ -276,5 +307,27 @@ function Chips({ items }: { items: { id: string; name: string }[] }) {
         </button>
       ))}
     </div>
+  );
+}
+
+/** Ask for a lesson for a lecture or deck that doesn't have one yet. */
+function MakeLesson({ lectureId }: { lectureId: string }) {
+  const { toast } = useSensei();
+  const [asked, setAsked] = useState(false);
+  const make = async () => {
+    setAsked(true);
+    try {
+      await api(`lesson/${lectureId}`, { method: 'POST' });
+      invalidate('today');
+      toast('Building your lesson. You’ll get a notification when it’s ready.');
+    } catch {
+      setAsked(false);
+      toast('Couldn’t start the lesson. Try again in a moment.');
+    }
+  };
+  return (
+    <button className="s-btn" disabled={asked} onClick={() => void make()}>
+      {asked ? 'Building…' : 'Make a lesson'}
+    </button>
   );
 }

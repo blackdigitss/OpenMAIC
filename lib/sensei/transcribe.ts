@@ -180,11 +180,13 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
   let words: import('./reels/boundaries').Word[] = [];
   const local = await import('./localTranscribe');
   const vocabulary = [...new Set(input.slides.flatMap((s) => s.text.match(/\b[A-Z][A-Za-z0-9]{2,}(?:\s[A-Z][A-Za-z0-9]+)?/g) ?? []))];
-  // 1. OpenAI whisper-1 in the cloud (complete, word times, no load on the Mac).
-  // 2. Only if SENSEI_LOCAL_AUDIO=1: whisper.cpp on this Mac (free, but hours of CPU).
-  // 3. Otherwise the audio model route (Gemini), below.
+  // Order follows Settings → Audio processing: this Mac first (free) or OpenAI first
+  // (no load); the other is the backup, and the audio model route (Gemini) is last.
+  const { getSettings } = await import('./settings');
+  const engine = (await getSettings(db)).audioEngine;
   let raw: import('./localTranscribe').RawSegment[] | null = null;
-  if (config.openaiApiKey) {
+  const tryCloud = async () => {
+    if (raw || !config.openaiApiKey) return;
     try {
       const { whisperApiTranscribe, recordTranscriptionUsage } = await import('./cloudTranscribe');
       const c = await whisperApiTranscribe(config.openaiApiKey, input.audioPath, { vocabulary, onProgress: (d, n) => input.onProgress?.(Math.round((100 * d) / n), 200) });
@@ -197,10 +199,22 @@ export async function transcribeLecture(db: Db, llm: StructuredLlm, input: Trans
       if (!isProviderUnavailable(e)) throw e;
       warnings.push(`cloud transcription unavailable (${(e as Error).message.slice(0, 80)})`);
     }
-  }
-  if (!raw && process.env.SENSEI_LOCAL_AUDIO === '1' && (await local.localTranscriptionAvailable())) {
-    raw = await local.whisperTranscribe(input.audioPath, vocabulary, (pct) => input.onProgress?.(pct, 200));
-    method = 'whisper-large-v3-turbo (this Mac)';
+  };
+  const tryLocal = async () => {
+    if (raw || !(await local.localTranscriptionAvailable())) return;
+    try {
+      raw = await local.whisperTranscribe(input.audioPath, vocabulary, (pct) => input.onProgress?.(pct, 200));
+      method = 'whisper-large-v3-turbo (this Mac)';
+    } catch (e) {
+      warnings.push(`local transcription failed (${(e as Error).message.slice(0, 80)})`);
+    }
+  };
+  if (engine === 'cloud') {
+    await tryCloud();
+    await tryLocal();
+  } else {
+    await tryLocal();
+    await tryCloud();
   }
   if (raw) {
     // The strong model (your Claude subscription) proofreads against the slides.
@@ -306,7 +320,8 @@ export async function spotCheckNumbers(db: Db, llm: StructuredLlm, lectureId: st
       // Second listen by a different model than the transcriber: the audio route (Gemini),
       // or this Mac's small whisper only if local audio work is allowed.
       const { whisperAvailable, wordsFor } = await import('./reels/audio');
-      const clip = process.env.SENSEI_LOCAL_AUDIO === '1' && (await whisperAvailable())
+      const { getSettings } = await import('./settings');
+      const clip = (await getSettings(db)).audioEngine === 'local' && (await whisperAvailable())
         ? { text: (await wordsFor(row.audio_path, from * 1000, to * 1000)).map((w) => w.text).join(' ') }
         : await llm.call({
             schema: ClipSchema,

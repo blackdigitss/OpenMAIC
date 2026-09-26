@@ -46,22 +46,27 @@ export async function storedWords(db: Db, audioSourceId: string, fromMs: number,
 }
 
 /**
- * Word times for a window, cheapest first: the stored transcript (free), then OpenAI
- * whisper-1 on just this window (a fraction of a cent), then this Mac's whisper only
- * if SENSEI_LOCAL_AUDIO=1.
+ * Word times for a window: the stored transcript if it has them (free), else this Mac's
+ * whisper or OpenAI whisper-1 on just this window, in the order set in Settings.
  */
 export async function wordsForWindow(db: Db, audioSourceId: string, audioPath: string, fromMs: number, toMs: number, vocabulary: string[] = []): Promise<Word[]> {
   const stored = await storedWords(db, audioSourceId, fromMs, toMs);
   if (stored?.length) return stored;
   const config = senseiConfig();
-  if (config.openaiApiKey) {
+  const { getSettings } = await import('../settings');
+  const engine = (await getSettings(db)).audioEngine;
+  const cloud = async () => {
     const { whisperApiTranscribe, recordTranscriptionUsage } = await import('../cloudTranscribe');
-    const c = await whisperApiTranscribe(config.openaiApiKey, audioPath, { vocabulary, fromSec: fromMs / 1000, toSec: toMs / 1000 });
+    const c = await whisperApiTranscribe(config.openaiApiKey!, audioPath, { vocabulary, fromSec: fromMs / 1000, toSec: toMs / 1000 });
     await recordTranscriptionUsage(c.seconds, 'sensei:reels');
     return c.words;
-  }
-  if (process.env.SENSEI_LOCAL_AUDIO === '1' && (await whisperAvailable())) return wordsFor(audioPath, fromMs, toMs, vocabulary);
-  throw new Error('No word timing for this recording (needs OpenAI credits, or SENSEI_LOCAL_AUDIO=1)');
+  };
+  const localOk = await whisperAvailable();
+  // Same order as Settings → Audio processing; the other engine is the backup.
+  if (engine === 'local' && localOk) return wordsFor(audioPath, fromMs, toMs, vocabulary).catch(() => (config.openaiApiKey ? cloud() : Promise.reject(new Error('local whisper failed'))));
+  if (config.openaiApiKey) return cloud().catch((e) => (localOk ? wordsFor(audioPath, fromMs, toMs, vocabulary) : Promise.reject(e)));
+  if (localOk) return wordsFor(audioPath, fromMs, toMs, vocabulary);
+  throw new Error('No word timing for this recording (install whisper.cpp or add an OpenAI key)');
 }
 
 /** Word timestamps (absolute ms in the source) for [fromMs, toMs] of an audio file, via whisper.cpp on this Mac. */

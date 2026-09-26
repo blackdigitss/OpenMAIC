@@ -281,12 +281,27 @@ export async function POST(req: NextRequest, ctx: Ctx) {
           budgetUsd: (v) => typeof v === 'number' && v >= 1 && v <= 1000,
           pauseAtBudget: (v) => typeof v === 'boolean',
           personalSpacing: (v) => typeof v === 'boolean',
+          audioEngine: (v) => v === 'local' || v === 'cloud',
         };
         for (const [k, v] of Object.entries(body)) {
           if (!allowed[k]?.(v)) return fail(400, `Bad setting ${k}`);
           await setSetting(db, k, v);
+          if (k === 'audioEngine') {
+            const { audioEngineFile } = await import('@/lib/sensei/settings');
+            const { mkdir: mk, writeFile: wf } = await import('fs/promises');
+            const file = audioEngineFile(senseiConfig().home);
+            await mk(file.replace(/\/[^/]+$/, ''), { recursive: true });
+            await wf(file, String(v));
+          }
         }
         return ok(await getSettings(db));
+      }
+      case 'lesson': {
+        // POST /lesson/<lectureId>: build (or rebuild) this lecture's interactive lesson.
+        if (!id || !UUID.test(id)) return fail(400, 'Bad lecture id');
+        const { requestLesson } = await import('@/lib/sensei/jobs');
+        const job = await requestLesson(db, id);
+        return job ? ok(job) : fail(404, 'Lecture not found');
       }
       case 'reels': {
         // POST /reels/request { key: 'module:<id>' | 'weak' | 'lecture:<id>', title }

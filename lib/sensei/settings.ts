@@ -11,6 +11,11 @@ export const SETTING_DEFAULTS = {
   pauseAtBudget: false,
   /** Use spacing tuned to this student once there's enough evidence (DECISIONS V16). */
   personalSpacing: true,
+  /**
+   * Where audio work runs: 'local' = whisper.cpp + Kokoro on this Mac (free, uses its CPU);
+   * 'cloud' = OpenAI whisper-1 + OpenAI voice (paid, no load). The other is the automatic backup.
+   */
+  audioEngine: 'local',
 } as const;
 
 export type Settings = {
@@ -19,7 +24,13 @@ export type Settings = {
   budgetUsd: number;
   pauseAtBudget: boolean;
   personalSpacing: boolean;
+  audioEngine: 'local' | 'cloud';
 };
+
+/** The voice service reads the engine from this file (it has no database connection). */
+export function audioEngineFile(home: string): string {
+  return `${home}/settings/audio-engine`;
+}
 
 export async function getSettings(db: Db): Promise<Settings> {
   const { rows } = await db.query<{ key: string; value: unknown }>('SELECT key, value FROM sensei_setting');
