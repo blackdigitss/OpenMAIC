@@ -15,10 +15,14 @@ other way; Sensei code lives in `lib/sensei`, `components/sensei`, `app/sensei`,
   Claude Code CLI, lean flags), then `google:` / `openai:` API backups.
 - strong = `claude:opus` (facts, flashcards, drills, textbook notes, transcript proofreading, scanned slides);
   fast = `claude:sonnet` (titles, tags, in-app answers).
-- Audio: OpenAI `whisper-1` in the cloud (words + segments), proofread by the strong model; Gemini as backup;
-  local whisper.cpp only with `SENSEI_LOCAL_AUDIO=1`.
-- Lessons: OpenMAIC generation → `com.sensei.bridge` (OpenAI-compatible, 127.0.0.1:3002) → Claude.
-  Narration: OpenMAIC's OpenAI TTS (`TTS_OPENAI_API_KEY`); local Kokoro only with `SENSEI_LOCAL_VOICE=1`.
+- Audio follows Settings → Audio processing (`audioEngine`, default `local`), with the other engine as automatic
+  backup and Gemini last:
+  - local: whisper.cpp large-v3-turbo transcribes on the Mac (CPU heavy, accepted by the user for audio), Kokoro
+    voices lesson narration (`com.sensei.voice`, 127.0.0.1:13305).
+  - cloud: OpenAI `whisper-1` (words + segments) and OpenAI `gpt-4o-mini-tts` through the same voice service.
+  - Either way the strong model proofreads transcripts against the slides.
+- Lessons: OpenMAIC generation → `com.sensei.bridge` (OpenAI-compatible, 127.0.0.1:3002) → Claude. Narration goes
+  through OpenMAIC's Lemonade TTS provider pointed at `com.sensei.voice`.
 - Every call starts from the standing brief in `lib/sensei/brief.ts`. Change agent behavior there, and bump `BRIEF_VERSION`.
 
 ## Content rules the code enforces
@@ -27,6 +31,13 @@ other way; Sensei code lives in `lib/sensei`, `components/sensei`, `app/sensei`,
 - Every generated item (card, drill, practice question, gap note) must cite the facts it came from, or it is dropped.
 - Numbers are checked against their source (`normalize.ts` fidelity checks); unverified numbers never become answers.
 - Knowledge is append-only with supersede-on-rerun; ids are content keys so re-runs are idempotent.
+
+## Major changes (newest first). Add an entry for anything that changes architecture, data flow or where work runs.
+- 2026-09-25: audio engine setting (local Whisper + Kokoro by default, OpenAI as backup or by choice); lessons on
+  request (`POST /lesson/<lectureId>`, Library → Lessons tab, "Make a lesson" on any lecture or deck).
+- 2026-09-25: codebase-memory-mcp code graph + ADR; standing agent brief (`brief.ts`); per-clip saved reel audio.
+- 2026-09-25: Claude subscription for every text step (bridge for lessons); lab drills; re-transcribe command.
+- 2026-09-24: model routing with provider fallback; scanned-slide reading; billing-aware job retries.
 
 ## Working conventions
 - Every change goes through a PR on `blackdigitss/OpenMAIC` with base `sensei` (`gh` defaults to upstream; the

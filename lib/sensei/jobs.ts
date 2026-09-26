@@ -32,6 +32,8 @@ export interface JobInput {
   roles?: Record<string, string> | null;
   /** Only textbooks: no class needed. */
   bookOnly?: boolean;
+  /** Build a lesson for this lecture (no files). */
+  lessonFor?: string;
 }
 
 /** Recording time from the file's own metadata (Voice Memos writes creation_time), else null. */
@@ -181,6 +183,18 @@ export async function runJob(deps: RunJobDeps, job: { id: string; input: JobInpu
   const input = job.input;
   const config = senseiConfig();
   try {
+    if (input.lessonFor) {
+      const made = await buildLesson(deps, job.id, input.lessonFor);
+      await db.query(
+        `UPDATE sensei_job SET status = 'succeeded', step = 'done', progress = 1, detail = $2, updated_at = now() WHERE id = $1`,
+        [job.id, made ? 'Lesson ready' : 'Nothing to teach yet for this lecture'],
+      );
+      if (made) {
+        const { rows: l } = await db.query<{ title: string }>('SELECT title FROM sensei_lecture WHERE id = $1', [input.lessonFor]);
+        await deps.notify?.('ready', `Lesson ready: “${l[0]?.title}”.`);
+      }
+      return;
+    }
     const roles = await Promise.all(input.files.map((f) => fileRole(f, input.roles?.[f])));
     const books = input.files.filter((_, i) => roles[i] === 'textbook');
     const decks = input.files.filter((_, i) => roles[i] === 'slides');
@@ -430,28 +444,50 @@ async function studyLecture(
     await requestReel(db, `lecture:${lectureId}`, `Key moments: ${t[0]?.title ?? 'class'}`);
   }
 
-  // Tonight's lesson is built from class sessions (decks feed them).
-  if (deps.appUrl && isSession) {
-    await progress(db, jobId, 'lesson', at(0.93), 'Building tonight’s lesson');
-    const brief = await buildLessonBrief(db, lectureId);
-    if (brief) {
-      const lessonOpts = {
-        baseUrl: deps.appUrl,
-        accessCode: deps.accessCode,
-        onProgress: (m: string, p: number) => void progress(db, jobId, 'lesson', at(0.93 + 0.07 * (p / 100)), `Building tonight’s lesson — ${m}`),
-      };
-      // Lessons run on your Claude subscription (DEFAULT_MODEL, via the local bridge);
-      // if Claude can't (usage limit, bridge down), build it once more with the backup.
-      const url = await generateClassroom(brief, lessonOpts).catch((e: Error) => {
-        const backup = process.env.SENSEI_LESSON_BACKUP_MODEL;
-        if (!backup) throw e;
-        return generateClassroom(brief, { ...lessonOpts, model: backup });
-      });
-      await db.query('UPDATE sensei_lecture SET classroom_url = $2 WHERE id = $1', [lectureId, new URL(url).pathname]);
-      await recordNarrationUsage(new URL(url).pathname.split('/').pop() ?? '', lectureId).catch(() => undefined);
-    }
-  }
+  // Tonight's lesson is built automatically from class sessions (decks feed them);
+  // any lecture or deck can also get one on request (Make a lesson).
+  if (deps.appUrl && isSession) await buildLesson(deps, jobId, lectureId, (f) => at(0.93 + 0.07 * f));
   return report;
+}
+
+/** Build (or rebuild) a lecture's interactive lesson through OpenMAIC. Returns false if there's nothing to teach yet. */
+export async function buildLesson(deps: RunJobDeps, jobId: string, lectureId: string, at: (f: number) => number = (f) => f): Promise<boolean> {
+  const { db } = deps;
+  if (!deps.appUrl) return false;
+  await progress(db, jobId, 'lesson', at(0), 'Building the lesson');
+  const brief = await buildLessonBrief(db, lectureId);
+  if (!brief) return false;
+  const lessonOpts = {
+    baseUrl: deps.appUrl,
+    accessCode: deps.accessCode,
+    onProgress: (m: string, p: number) => void progress(db, jobId, 'lesson', at(p / 100), `Building the lesson — ${m}`),
+  };
+  // Lessons run on your Claude subscription (DEFAULT_MODEL, via the local bridge);
+  // if Claude can't (usage limit, bridge down), build it once more with the backup.
+  const url = await generateClassroom(brief, lessonOpts).catch((e: Error) => {
+    const backup = process.env.SENSEI_LESSON_BACKUP_MODEL;
+    if (!backup) throw e;
+    return generateClassroom(brief, { ...lessonOpts, model: backup });
+  });
+  await db.query('UPDATE sensei_lecture SET classroom_url = $2 WHERE id = $1', [lectureId, new URL(url).pathname]);
+  await recordNarrationUsage(db, new URL(url).pathname.split('/').pop() ?? '', lectureId).catch(() => undefined);
+  return true;
+}
+
+/** Queue a lesson for a lecture or deck (from the app's Make a lesson). One at a time per lecture. */
+export async function requestLesson(db: Db, lectureId: string): Promise<{ jobId: string } | null> {
+  const { rows: busy } = await db.query<{ id: string }>(
+    `SELECT id FROM sensei_job WHERE lecture_id = $1 AND status IN ('queued','running') AND input ? 'lessonFor' LIMIT 1`,
+    [lectureId],
+  );
+  if (busy[0]) return { jobId: busy[0].id };
+  const { rows: l } = await db.query<{ title: string }>('SELECT title FROM sensei_lecture WHERE id = $1', [lectureId]);
+  if (!l[0]) return null;
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO sensei_job (status, input, detail, lecture_id) VALUES ('queued', $1, 'Waiting to start', $2) RETURNING id`,
+    [JSON.stringify({ files: [], lessonFor: lectureId, title: `Lesson: ${l[0].title}` }), lectureId],
+  );
+  return { jobId: rows[0].id };
 }
 
 /**
@@ -586,10 +622,12 @@ export async function retranscribeLecture(db: Db, lectureId: string): Promise<st
 
 /**
  * OpenMAIC records narration audio without logging usage, so Sensei logs the
- * characters narrated (cloud voice only) to keep the budget honest.
+ * characters narrated when the OpenAI voice is selected, to keep the budget honest.
  */
-async function recordNarrationUsage(classroomId: string, lectureId: string): Promise<void> {
-  if (!process.env.TTS_OPENAI_API_KEY || !/^[\w-]+$/.test(classroomId)) return;
+async function recordNarrationUsage(db: Db, classroomId: string, lectureId: string): Promise<void> {
+  const { getSettings } = await import('./settings');
+  // Only the cloud voice costs money; Kokoro on this Mac is free.
+  if ((await getSettings(db)).audioEngine !== 'cloud' || !/^[\w-]+$/.test(classroomId)) return;
   const { readClassroom } = await import('@/lib/server/classroom-storage');
   const c = await readClassroom(classroomId);
   const chars = (c?.scenes ?? [])

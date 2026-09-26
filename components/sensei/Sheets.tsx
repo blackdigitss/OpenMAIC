@@ -16,7 +16,7 @@ import {
 } from './api';
 import { CloseIcon, DocIcon, MicIcon } from './icons';
 import { useSensei } from './store';
-import { Section } from './ui';
+import { Section, Segmented } from './ui';
 
 const CHUNK = 8 * 1024 * 1024; // stays under proxy request limits (Cloudflare: 100 MB)
 
@@ -421,6 +421,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           <NotificationsSection />
           <BudgetSection />
           <SpacingSection />
+          <AudioSection />
           <ModulesSection />
           <BackupSection />
           <Section
@@ -726,6 +727,37 @@ function BackupSection() {
               : 'Runs with tonight’s backup'}
           </span>
         </div>
+      </div>
+    </Section>
+  );
+}
+
+/** Where recordings are transcribed and lessons are voiced. */
+function AudioSection() {
+  const { data: s, reload } = useApi<SettingsData>('settings');
+  if (!s) return null;
+  const set = async (v: 'local' | 'cloud') => {
+    await api('settings', { method: 'POST', body: JSON.stringify({ audioEngine: v }) });
+    void reload();
+  };
+  return (
+    <Section
+      title="Audio processing"
+      footer={
+        s.audioEngine === 'local'
+          ? 'Recordings are transcribed and lessons are voiced on your Mac: free, but it works hard for a while after each class. OpenAI steps in automatically if anything fails.'
+          : 'Recordings are transcribed and lessons are voiced by OpenAI: no load on your Mac, about $0.55 per 1½-hour class and $0.20 per lesson. Your Mac steps in automatically if OpenAI fails.'
+      }
+    >
+      <div style={{ margin: '0 16px' }}>
+        <Segmented
+          options={[
+            { value: 'local', label: 'On this Mac' },
+            { value: 'cloud', label: 'OpenAI' },
+          ]}
+          value={s.audioEngine}
+          onChange={(v) => void set(v)}
+        />
       </div>
     </Section>
   );

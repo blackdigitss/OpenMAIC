@@ -26,6 +26,7 @@ export interface SettingsData {
   budgetUsd: number;
   pauseAtBudget: boolean;
   personalSpacing: boolean;
+  audioEngine: 'local' | 'cloud';
   pushDevices: number;
   pushKey: string | null;
   lastBackup: { at: string } | null;

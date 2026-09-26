@@ -79,3 +79,29 @@ describe('the standing brief', () => {
     }
   });
 });
+
+describe('lessons on request and the audio setting', () => {
+  it('queues one lesson job per lecture and defaults audio to this Mac', async () => {
+    const { testDb } = await import('./helpers');
+    const { requestLesson } = await import('@/lib/sensei/jobs');
+    const { getSettings, setSetting } = await import('@/lib/sensei/settings');
+    const { ensureCourse, ensureLecture } = await import('@/lib/sensei/store');
+    const db = await testDb();
+    try {
+      const course = await ensureCourse(db, 'RESP 101A', 'RC1');
+      const lectureId = await ensureLecture(db, { courseId: course, date: '2026-09-17', title: 'Medical gases', kind: 'deck' });
+      const a = await requestLesson(db, lectureId);
+      const b = await requestLesson(db, lectureId);
+      expect(a?.jobId).toBeTruthy();
+      expect(b?.jobId).toBe(a?.jobId); // no duplicate while one is waiting
+      const { rows } = await db.query<{ input: { lessonFor: string; files: string[] } }>('SELECT input FROM sensei_job');
+      expect(rows[0].input).toMatchObject({ lessonFor: lectureId, files: [] });
+      expect(await requestLesson(db, '00000000-0000-0000-0000-000000000000')).toBeNull();
+      expect((await getSettings(db)).audioEngine).toBe('local');
+      await setSetting(db, 'audioEngine', 'cloud');
+      expect((await getSettings(db)).audioEngine).toBe('cloud');
+    } finally {
+      await db.close();
+    }
+  });
+});
